@@ -58,6 +58,11 @@
           "end_line": 370
         },
         {
+          "id": "direct_nuclear_and_total_scattering_rates",
+          "start_line": 404,
+          "end_line": 463
+        },
+        {
           "id": "thermal_average_relative_velocity",
           "start_line": 616,
           "end_line": 649
@@ -126,6 +131,33 @@
       ]
     },
     {
+      "id": "standard_dm_particle",
+      "upstream_id": "obscura",
+      "path": "src/DM_Particle_Standard.cpp",
+      "fragments": [
+        {
+          "id": "set_sigma_proton",
+          "start_line": 54,
+          "end_line": 56
+        },
+        {
+          "id": "fix_coupling_ratio",
+          "start_line": 136,
+          "end_line": 152
+        },
+        {
+          "id": "sigma_proton",
+          "start_line": 205,
+          "end_line": 209
+        },
+        {
+          "id": "spin_dependent_construction_and_constant_cross_section",
+          "start_line": 508,
+          "end_line": 547
+        }
+      ]
+    },
+    {
       "id": "steffen_interpolation",
       "upstream_id": "libphysica",
       "path": "src/Numerics.cpp",
@@ -178,6 +210,11 @@
           "id": "solar_mass_and_radius",
           "start_line": 170,
           "end_line": 178
+        },
+        {
+          "id": "reduced_mass",
+          "start_line": 247,
+          "end_line": 251
         }
       ]
     }
@@ -290,6 +327,72 @@
         {
           "id": "isotopic_abundances",
           "description": "Nuclear_Data.txt isotope abundances are used verbatim, including the calcium entries whose sum is 1.00003; they are not renormalized."
+        }
+      ]
+    },
+    {
+      "id": "direct_sd_proton_rate",
+      "derived_from": [
+        "thermal_average_relative_velocity",
+        "direct_nuclear_and_total_scattering_rates",
+        "set_sigma_proton",
+        "fix_coupling_ratio",
+        "sigma_proton",
+        "spin_dependent_construction_and_constant_cross_section",
+        "reduced_mass",
+        "particle_and_gravity_constants"
+      ],
+      "destinations": [
+        {
+          "path": "Code/include/transport/physics/ScatteringPhysics.hpp"
+        },
+        {
+          "path": "Code/src/physics/ScatteringPhysics.cpp"
+        }
+      ],
+      "intentional_differences": [
+        {
+          "category": "units",
+          "description": "The project API accepts GeV, cm, cm/s, and cm^2 and returns rates in s^-1 instead of exposing natural-unit library types.",
+          "behavior_change": false
+        },
+        {
+          "category": "model_scope",
+          "description": "The model type fixes the selected MVP to 0.1 GeV dark matter with pure proton coupling and does not permit runtime mass or proton-to-neutron coupling variation.",
+          "behavior_change": true
+        },
+        {
+          "category": "electron_scope",
+          "description": "Only nuclear rates are present because the fixed MVP has zero electron cross section; no electron target or electron rate is represented.",
+          "behavior_change": false
+        },
+        {
+          "category": "calculation_path",
+          "description": "Rates are evaluated directly for every query with no interpolation table, MPI construction, or rate cache.",
+          "behavior_change": false
+        },
+        {
+          "category": "validation_and_domain",
+          "description": "Invalid or unrepresentable model, target, radius, speed, cross-section, and rate values raise exceptions; exterior rates return an explicit zero breakdown.",
+          "behavior_change": true
+        }
+      ],
+      "preserved_behaviors": [
+        {
+          "id": "sd_proton_normalization",
+          "description": "The SD conversion from sigma_p uses prefactor 3 and fixes the neutron coupling fn to zero."
+        },
+        {
+          "id": "all_solar_targets",
+          "description": "All 63 SolarBackground isotope targets remain in source order, including spin-zero and zero-proton-response targets with zero rate."
+        },
+        {
+          "id": "direct_rate_product",
+          "description": "Each direct constant-contact target rate is Gamma_i = n_i times sigma_i times the thermal mean relative speed."
+        },
+        {
+          "id": "source_order_accumulation",
+          "description": "The total rate is accumulated in the fixed solar-target source order from the complete per-target breakdown."
         }
       ]
     }

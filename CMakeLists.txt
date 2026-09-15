@@ -30,6 +30,9 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     -Wall -Wextra -Wpedantic)
 endif()
 
+add_executable(sd_rate_diagnostic Code/tools/sd_rate_diagnostic.cpp)
+target_link_libraries(sd_rate_diagnostic PRIVATE transport_reference_physics)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(test_phase_space_grid Code/tests/test_phase_space_grid.cpp)
@@ -61,6 +64,16 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(solar_background PROPERTIES TIMEOUT 10)
 
+  add_executable(test_scattering_rate
+    Code/tests/test_scattering_rate.cpp)
+  target_link_libraries(test_scattering_rate
+    PRIVATE transport_reference_physics)
+  add_test(NAME scattering_rate
+    COMMAND test_scattering_rate
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
+  set_tests_properties(scattering_rate PROPERTIES TIMEOUT 10)
+
   find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
   add_test(NAME project_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_project_contract.py)
@@ -72,4 +85,8 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_reference_physics_provenance.py)
   set_tests_properties(reference_physics_provenance PROPERTIES TIMEOUT 10)
+  add_test(NAME t03_oracle_contract
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_t03_oracle_contract.py)
+  set_tests_properties(t03_oracle_contract PROPERTIES TIMEOUT 10)
 endif()

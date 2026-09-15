@@ -6,7 +6,8 @@
 - 为默认构建增加最小 GitHub Actions；扩展有限体积 faces/bounds/闭域定位和稳定相空间测度，实现独立的 `particles/s` 保守源投影。T04 仍待求积、逃逸阈值几何和跨语言 schema。
 - 将 DaMaSCUS-SUN-EVAP 固定为严格只读素材库，取消未发布的外部源码 target 方案；基线工具只校验本项目内保存的配置与报告，契约测试拒绝重新引入参考仓库构建入口。
 - T02 改为在本项目移植经审计的最小背景/散射代码并记录来源与许可证；系统 parity 由 T03 在本项目内验收。
-- T02 项目内物理层现含稳定的 Maxwell 热浴平均相对速度与 T02a `SolarBackground`：使用项目内 AGSS09/核数据副本，以显式 cgs 查询 63 个同位素靶的背景量；T02b–d 与 T03 系统回归继续待办。
+- T02 项目内物理层完成 T02a 冻结 AGSS09 背景与 T02b 固定 MVP 直接率：按 obscura SD convention 返回全部 63 靶的截面、`Gamma_A` 和总率，并提供 `sd_rate_diagnostic`；T02c/d 继续待办。
+- 冻结 T03 独立 legacy artifact 导入契约和 `reference_parity`/`physics_validation` 双报告结构；artifact 当前不可用，禁止由现实现反算 golden。
 
 ## 2026-09-15 — 公开文档精简
 

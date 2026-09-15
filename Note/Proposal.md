@@ -375,7 +375,7 @@ T02 只在 DM-Transport 中拆出并移植散射链；参考文件保持原样�
 
 ## 7.1 `SolarBackground`
 
-项目内背景适配层由调用方显式传入项目数据路径，并以 cgs 提供以下核心接口：
+`SolarBackground` 是冻结的 AGSS09 reference 实现，不是通用恒星背景；在出现经过验证的第二种背景模型前，不提前引入通用接口或可配置表结构。调用方显式传入项目数据路径，并以 cgs 使用以下核心接口：
 
 ```cpp
 double temperature_K(double r_cm);
@@ -405,9 +405,32 @@ Solar_Model rate
 → Scatter 更新速度
 ```
 
-本版没有独立 `Sample_Momentum_Transfer()`。移植后的主接口以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。示意契约如下，具体类型以项目内实现为准，`_nu` 表示与固定参考一致的自然单位：
+MVP 固定为 `m_chi=0.1 GeV`、SD constant-contact 和 proton-only coupling（`a_n=0`），但仍保留全部 63 个太阳同位素靶。直接率沿用固定 obscura 归一化：对 `J_A>0`，
+
+$$
+\sigma_A^{\rm SD}
+=\sigma_p\frac{4}{3}
+\frac{\mu_{\chi A}^2}{\mu_{\chi p}^2}
+\frac{J_A+1}{J_A}
+\langle S_p\rangle_A^2,
+\qquad
+\Gamma_A(r,v)=n_A(r)\sigma_A^{\rm SD}\langle v_{\rm rel}\rangle_A,
+$$
+
+自旋为零的靶取 `sigma_A=0`，总率按固定靶顺序求和 `Gamma_total=sum_A Gamma_A`。直接接口返回全部 63 个分靶记录，包括零率靶，并同时返回总率；本阶段不引入 rate 插值或缓存。
+
+本版没有独立 `Sample_Momentum_Transfer()`。T02c/d 的主碰撞接口以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。稳定契约如下，`_nu` 表示与固定参考一致的自然单位：
 
 ```cpp
+struct SdProtonModel {
+    double dark_matter_mass_GeV;
+    double proton_cross_section_cm2;
+};
+
+SdScatteringRates direct_sd_proton_scattering_rates(
+    const SolarBackground&, const SdProtonModel&,
+    double radius_cm, double dm_speed_cm_s);
+
 struct CollisionSample {
     Vector3 velocity_out_nu;
     Vector3 target_velocity_nu;
@@ -417,8 +440,6 @@ struct CollisionSample {
 
 class ScatteringPhysics {
 public:
-    double total_rate(const SolarBackground&, const DMModel&,
-                      double radius_nu, double speed_nu) const;
     CollisionSample sample_collision(
         const SolarBackground&, const DMModel&, double radius_nu,
         const Vector3& velocity_in_nu, LegacyRNG& rng);
@@ -427,7 +448,7 @@ public:
 
 靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。散射适配器内部可保留固定参考的自然单位，但与 cgs `SolarBackground` 及跨语言文件的转换边界必须显式；文件字段按 Task_Plan 使用 `r_cm`、`v_cm_s`、`rate_s_inv` 等单位名。
 
-若保留 `cos_scattering_angle` 诊断，它必须标明是旧实现围绕入射实验室 DM 速度轴抽取的变量，不是一般运动靶标下的相对速度散射角。旧角采样和 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。MVP 固定为待 T03 验证的 SD 恒截面模型；low-mass 分支是显式配置开关，不是由低质量自动启用。移植先保持旧抽样映射，任何物理修正单独建立回归基线。
+若保留 `cos_scattering_angle` 诊断，它必须标明是旧实现围绕入射实验室 DM 速度轴抽取的变量，不是一般运动靶标下的相对速度散射角。旧角采样和 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。low-mass 分支是显式配置开关，不是由低质量自动启用。移植先保持旧抽样映射，任何物理修正单独建立回归基线。
 
 ---
 
@@ -441,6 +462,8 @@ public:
                                       ▼ parity
 DM-Transport ScatteringPhysics ──► TransportOperator
 ```
+
+T03 只导入按 [oracle contract](../Code/configs/validation/t03_oracle_contract.json) 在 DM-Transport 外独立生成并冻结的 legacy artifact；当前物理实现不得参与期望值生成。验证报告分别给出 `reference_parity` 与 `physics_validation`，两者独立判定，不能以复现 reference 代替运动学、旋转对称性和热浴检查。
 
 目标关系是：
 

@@ -34,6 +34,7 @@ SOURCES = {
             "solar_model_import_and_tables": (166, 233),
             "solar_target_construction": (251, 289),
             "solar_background_queries": (291, 370),
+            "direct_nuclear_and_total_scattering_rates": (404, 463),
             "thermal_average_relative_velocity": (616, 649),
         }),
     "agss09_solar_model_data": (
@@ -50,6 +51,14 @@ SOURCES = {
     "nuclear_target_data": (
         "obscura", "data/Nuclear_Data.txt",
         {"nuclear_data_records": (1, 295)}),
+    "standard_dm_particle": (
+        "obscura", "src/DM_Particle_Standard.cpp", {
+            "set_sigma_proton": (54, 56),
+            "fix_coupling_ratio": (136, 152),
+            "sigma_proton": (205, 209),
+            "spin_dependent_construction_and_constant_cross_section":
+                (508, 547),
+        }),
     "steffen_interpolation": (
         "libphysica", "src/Numerics.cpp", {
             "steffen_coefficients": (21, 70),
@@ -64,6 +73,7 @@ SOURCES = {
             "time_and_temperature_units": (78, 106),
             "particle_and_gravity_constants": (135, 164),
             "solar_mass_and_radius": (170, 178),
+            "reduced_mass": (247, 251),
         }),
 }
 AGSS09_ATTRIBUTION = {
@@ -83,7 +93,33 @@ ALL_FRAGMENTS = {
 }
 PORT_FRAGMENTS = {
     "mean_relative_speed": {"thermal_average_relative_velocity"},
-    "solar_background": ALL_FRAGMENTS - {"thermal_average_relative_velocity"},
+    "solar_background": {
+        "solar_model_import_and_tables",
+        "solar_target_construction",
+        "solar_background_queries",
+        "agss09_model_table",
+        "horner_interpolation_evaluation",
+        "isotope_name_and_mass_model",
+        "nuclear_data_import",
+        "nuclear_data_records",
+        "steffen_coefficients",
+        "steffen_construction_and_evaluation",
+        "gauss_legendre_30",
+        "mass_and_length_units",
+        "time_and_temperature_units",
+        "particle_and_gravity_constants",
+        "solar_mass_and_radius",
+    },
+    "direct_sd_proton_rate": {
+        "thermal_average_relative_velocity",
+        "direct_nuclear_and_total_scattering_rates",
+        "set_sigma_proton",
+        "fix_coupling_ratio",
+        "sigma_proton",
+        "spin_dependent_construction_and_constant_cross_section",
+        "reduced_mass",
+        "particle_and_gravity_constants",
+    },
 }
 DESTINATIONS = {
     "mean_relative_speed": {
@@ -96,12 +132,20 @@ DESTINATIONS = {
         "Code/data/solar/model_agss09.dat",
         "Code/data/solar/Nuclear_Data.txt",
     },
+    "direct_sd_proton_rate": {
+        "Code/include/transport/physics/ScatteringPhysics.hpp",
+        "Code/src/physics/ScatteringPhysics.cpp",
+    },
 }
 DIFFERENCE_CATEGORIES = {
     "mean_relative_speed": {"units", "scope", "validation"},
     "solar_background": {
         "units", "data_loading", "data_format", "validation_and_domain",
         "input_contract",
+    },
+    "direct_sd_proton_rate": {
+        "units", "model_scope", "electron_scope", "calculation_path",
+        "validation_and_domain",
     },
 }
 PRESERVED_BEHAVIORS = {
@@ -111,6 +155,12 @@ PRESERVED_BEHAVIORS = {
         "escape_profile_numerics",
         "number_density_order",
         "isotopic_abundances",
+    },
+    "direct_sd_proton_rate": {
+        "sd_proton_normalization",
+        "all_solar_targets",
+        "direct_rate_product",
+        "source_order_accumulation",
     },
 }
 EXCLUSIONS = {

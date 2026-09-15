@@ -69,7 +69,7 @@ void test_zero_speed_limit() {
                   expected, "zero-speed Maxwellian mean", 3.0e-15);
 }
 
-void test_legacy_golden_value() {
+void test_reference_numeric_checkpoint() {
     const double temperature_K = 1.0e7;
     const double proton_mass_GeV = 0.9382720813;
     const double dark_matter_speed_cm_s = 1.0e-3 * speedOfLightCmS;
@@ -77,7 +77,7 @@ void test_legacy_golden_value() {
         temperature_K, proton_mass_GeV, dark_matter_speed_cm_s) /
         speedOfLightCmS;
     require_close(dimensionless_mean, 0.0017928027334128615,
-                  "legacy proton golden value", 1.0e-12);
+                  "reference proton numeric checkpoint", 1.0e-12);
 }
 
 void test_representable_subnormal_temperature_mass_ratios() {
@@ -145,7 +145,7 @@ void test_invalid_inputs() {
 int main() {
     try {
         test_zero_speed_limit();
-        test_legacy_golden_value();
+        test_reference_numeric_checkpoint();
         test_representable_subnormal_temperature_mass_ratios();
         test_branch_boundaries();
         test_invalid_inputs();

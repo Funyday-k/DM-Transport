@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "contract_id": "legacy_golden_physics_v1",
+  "status": "awaiting_independent_artifact",
+  "source": {
+    "repository": "https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP.git",
+    "commit": "b5678f5b193aa567ca10715c2a6c764c9e72eec7",
+    "dependencies": {
+      "obscura_commit": "4b1b9d87f8a69da4d8081175d322b66e48314328",
+      "libphysica_commit": "fefbe47993bbd343277718708407fa7a40629738"
+    },
+    "producer": "fixed legacy executable run outside DM-Transport",
+    "import_rule": "Import an externally generated frozen artifact without recomputing expected values in DM-Transport.",
+    "required_producer_metadata": [
+      "source_and_dependency_commits",
+      "compiler_and_standard_library",
+      "build_type_and_options",
+      "applied_patch_state",
+      "solar_and_nuclear_data_paths",
+      "rng_engine_seed_and_mpi_ranks"
+    ],
+    "forbidden_generator_components": [
+      "transport_reference_physics",
+      "SolarBackground",
+      "direct_sd_proton_scattering_rates"
+    ]
+  },
+  "model": {
+    "dark_matter_mass_GeV": 0.1,
+    "dark_matter_spin": 0.5,
+    "interaction": "SD",
+    "form_factor": "Contact",
+    "low_mass_mode": true,
+    "proton_relative_coupling": 1.0,
+    "neutron_relative_coupling": 0.0,
+    "electron_cross_section_cm2": 0.0,
+    "proton_cross_section_cm2": 1e-34,
+    "solar_target_policy": "all_63_isotopes_in_reference_order",
+    "direct_rate_without_interpolation": true
+  },
+  "rate_grid": {
+    "radius_Rsun": [0.0, 0.1, 0.3, 0.5, 0.7, 1.0],
+    "speed_over_c": [0.0, 0.0001, 0.001, 0.003, 0.006, 0.01],
+    "target_policy": "all_63_isotopes_in_reference_order",
+    "required_fields": [
+      "temperature_K",
+      "mass_enclosed_g",
+      "escape_speed_cm_s",
+      "target_number_density_cm3",
+      "target_cross_section_cm2",
+      "target_mean_relative_speed_cm_s",
+      "target_rate_s_inv",
+      "total_rate_s_inv"
+    ]
+  },
+  "target_selection_reference": {
+    "radius_Rsun": [0.1, 0.5, 0.9],
+    "speed_over_c": [0.0001, 0.001, 0.006],
+    "engine": "std::mt19937",
+    "seeds": [20260916, 20260917, 20260918, 20260919],
+    "samples_per_seed_per_state": 250000,
+    "required_fields": [
+      "target_rate_s_inv",
+      "target_probability",
+      "target_selection_count",
+      "sample_count",
+      "confidence_interval"
+    ]
+  },
+  "collision_reference_parity": {
+    "radius_Rsun": [0.1, 0.5, 0.9],
+    "target_indices": [0, 2, 13],
+    "incoming_direction_lab": [0.0, 0.0, 1.0],
+    "speed_over_target_thermal_speed": [0.1, 1.0, 3.0, 10.0],
+    "state_construction": "Use the Cartesian product of radius, fixed target index, and positive speed ratio with the declared incoming direction.",
+    "zero_speed_excluded_reason": "The fixed legacy target-velocity sampler rejects non-positive incoming DM speed.",
+    "rng": {
+      "engine": "std::mt19937",
+      "event_prefix_seed": 20260915,
+      "event_prefix_per_state": 64,
+      "aggregate_seeds": [20260916, 20260917, 20260918, 20260919],
+      "aggregate_samples_per_seed_per_state": 250000,
+      "mpi_ranks": 1,
+      "distribution_implementation": "Record the producer compiler and C++ standard-library identity."
+    },
+    "event_prefix_fields": [
+      "selected_target_index",
+      "target_velocity_cm_s_xyz",
+      "outgoing_velocity_cm_s_xyz",
+      "outgoing_speed_cm_s",
+      "outgoing_lab_angle_cosine",
+      "dark_matter_energy_change_eV"
+    ],
+    "aggregate_fields": [
+      "sample_count",
+      "target_speed_histogram",
+      "relative_speed_histogram",
+      "target_angle_histogram",
+      "outgoing_speed_histogram",
+      "outgoing_lab_angle_histogram",
+      "mean_dark_matter_energy_change_eV",
+      "sample_standard_error",
+      "confidence_interval"
+    ],
+    "definitions": {
+      "target_thermal_speed": "sqrt(2 k_B T / m_A)",
+      "target_angle_cosine": "dot(v_chi,u_A)/(|v_chi||u_A|) for nonzero vectors",
+      "outgoing_lab_angle_cosine": "dot(v_in,v_out)/(|v_in||v_out|) for nonzero vectors",
+      "dark_matter_energy_change_eV": "0.5*m_chi_GeV*(|v_out|^2-|v_in|^2)/c^2*1e9"
+    },
+    "histograms": {
+      "target_speed_over_target_thermal_speed": {
+        "minimum": 0.0,
+        "maximum": 12.0,
+        "bins": 120,
+        "include_overflow": true
+      },
+      "relative_speed_over_target_thermal_speed": {
+        "minimum": 0.0,
+        "maximum": 16.0,
+        "bins": 160,
+        "include_overflow": true
+      },
+      "target_angle_cosine": {
+        "minimum": -1.0,
+        "maximum": 1.0,
+        "bins": 80,
+        "include_overflow": false
+      },
+      "outgoing_speed_over_target_thermal_speed": {
+        "minimum": 0.0,
+        "maximum": 16.0,
+        "bins": 160,
+        "include_overflow": true
+      },
+      "outgoing_lab_angle_cosine": {
+        "minimum": -1.0,
+        "maximum": 1.0,
+        "bins": 80,
+        "include_overflow": false
+      }
+    }
+  },
+  "collision_physics_validation": {
+    "speed_over_target_thermal_speed": [0.0, 0.1, 1.0, 3.0, 10.0],
+    "zero_speed_rule": "Validate the analytic or one-sided collision-conditioned limit independently; do not request a zero-speed legacy sample.",
+    "required_checks": [
+      "collision_conditioned_target_distribution",
+      "momentum_and_energy_kinematics",
+      "rotational_symmetry",
+      "thermal_bath_equilibrium",
+      "scattering_angle_distribution"
+    ]
+  },
+  "comparison_policy": {
+    "deterministic_rate_relative_tolerance": 1e-10,
+    "deterministic_rate_absolute_floor_s_inv": 1e-30,
+    "event_prefix_tolerances": {
+      "velocity_relative": 1e-12,
+      "velocity_absolute_cm_s": 1e-6,
+      "cosine_absolute": 1e-12,
+      "energy_relative": 1e-12,
+      "energy_absolute_eV": 1e-12
+    },
+    "confidence_level": 0.95,
+    "mean_interval": "normal interval using 1.96 times the sample standard error",
+    "histogram_interval": "Wilson score interval per bin with Bonferroni correction across reported bins",
+    "acceptance": "Apply deterministic tolerances to scalar and event-prefix comparisons; require each producer-minus-project statistical difference to be consistent with zero under the declared combined uncertainty and multiple-comparison correction."
+  },
+  "validation_report_sections": [
+    "reference_parity",
+    "physics_validation"
+  ],
+  "unavailable_reason": "T01 contains no local background, direct-rate, or single-collision oracle values, and the read-only reference repository must not be built or run for this project."
+}

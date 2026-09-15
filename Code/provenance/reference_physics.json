@@ -12,6 +12,28 @@
         "upstream_path": "LICENSE",
         "local_notice_path": "Code/provenance/licenses/DaMaSCUS-SUN-EVAP-MIT.txt"
       }
+    },
+    {
+      "id": "obscura",
+      "repository": "https://github.com/temken/obscura.git",
+      "commit": "4b1b9d87f8a69da4d8081175d322b66e48314328",
+      "license": {
+        "status": "verified",
+        "spdx_expression": "MIT",
+        "upstream_path": "LICENSE",
+        "local_notice_path": "Code/provenance/licenses/obscura-MIT.txt"
+      }
+    },
+    {
+      "id": "libphysica",
+      "repository": "https://github.com/temken/libphysica.git",
+      "commit": "fefbe47993bbd343277718708407fa7a40629738",
+      "license": {
+        "status": "verified",
+        "spdx_expression": "MIT",
+        "upstream_path": "LICENSE",
+        "local_notice_path": "Code/provenance/licenses/libphysica-MIT.txt"
+      }
     }
   ],
   "source_files": [
@@ -21,9 +43,141 @@
       "path": "src/Solar_Model.cpp",
       "fragments": [
         {
+          "id": "solar_model_import_and_tables",
+          "start_line": 166,
+          "end_line": 233
+        },
+        {
+          "id": "solar_target_construction",
+          "start_line": 251,
+          "end_line": 289
+        },
+        {
+          "id": "solar_background_queries",
+          "start_line": 291,
+          "end_line": 370
+        },
+        {
           "id": "thermal_average_relative_velocity",
           "start_line": 616,
           "end_line": 649
+        }
+      ]
+    },
+    {
+      "id": "agss09_solar_model_data",
+      "upstream_id": "damascus_sun_evap",
+      "path": "data/model_agss09.dat",
+      "attribution": {
+        "model": "Standard Solar Model AGSS09",
+        "authors": "Serenelli et al.",
+        "year": 2009,
+        "reference": "arXiv:0909.2668",
+        "basis": "Upstream table header",
+        "licensing_note": "The table file states no separate data license; its inclusion is tracked under the enclosing DaMaSCUS-SUN-EVAP MIT source record."
+      },
+      "fragments": [
+        {
+          "id": "agss09_model_table",
+          "start_line": 1,
+          "end_line": 1988
+        }
+      ]
+    },
+    {
+      "id": "patched_interpolation_evaluation",
+      "upstream_id": "damascus_sun_evap",
+      "path": "cmake/PatchLibphysicaInterpolation.cmake",
+      "fragments": [
+        {
+          "id": "horner_interpolation_evaluation",
+          "start_line": 16,
+          "end_line": 24
+        }
+      ]
+    },
+    {
+      "id": "nuclear_target_model",
+      "upstream_id": "obscura",
+      "path": "src/Target_Nucleus.cpp",
+      "fragments": [
+        {
+          "id": "isotope_name_and_mass_model",
+          "start_line": 25,
+          "end_line": 40
+        },
+        {
+          "id": "nuclear_data_import",
+          "start_line": 130,
+          "end_line": 179
+        }
+      ]
+    },
+    {
+      "id": "nuclear_target_data",
+      "upstream_id": "obscura",
+      "path": "data/Nuclear_Data.txt",
+      "fragments": [
+        {
+          "id": "nuclear_data_records",
+          "start_record": 1,
+          "end_record": 295
+        }
+      ]
+    },
+    {
+      "id": "steffen_interpolation",
+      "upstream_id": "libphysica",
+      "path": "src/Numerics.cpp",
+      "fragments": [
+        {
+          "id": "steffen_coefficients",
+          "start_line": 21,
+          "end_line": 70
+        },
+        {
+          "id": "steffen_construction_and_evaluation",
+          "start_line": 182,
+          "end_line": 238
+        }
+      ]
+    },
+    {
+      "id": "gauss_legendre_integration",
+      "upstream_id": "libphysica",
+      "path": "src/Integration.cpp",
+      "fragments": [
+        {
+          "id": "gauss_legendre_30",
+          "start_line": 95,
+          "end_line": 107
+        }
+      ]
+    },
+    {
+      "id": "legacy_natural_units",
+      "upstream_id": "libphysica",
+      "path": "src/Natural_Units.cpp",
+      "fragments": [
+        {
+          "id": "mass_and_length_units",
+          "start_line": 38,
+          "end_line": 63
+        },
+        {
+          "id": "time_and_temperature_units",
+          "start_line": 78,
+          "end_line": 106
+        },
+        {
+          "id": "particle_and_gravity_constants",
+          "start_line": 135,
+          "end_line": 164
+        },
+        {
+          "id": "solar_mass_and_radius",
+          "start_line": 170,
+          "end_line": 178
         }
       ]
     }
@@ -57,6 +211,85 @@
           "category": "validation",
           "description": "Invalid and unrepresentable inputs raise explicit standard exceptions.",
           "behavior_change": true
+        }
+      ]
+    },
+    {
+      "id": "solar_background",
+      "derived_from": [
+        "solar_model_import_and_tables",
+        "solar_target_construction",
+        "solar_background_queries",
+        "agss09_model_table",
+        "isotope_name_and_mass_model",
+        "nuclear_data_import",
+        "nuclear_data_records",
+        "steffen_coefficients",
+        "steffen_construction_and_evaluation",
+        "horner_interpolation_evaluation",
+        "gauss_legendre_30",
+        "mass_and_length_units",
+        "time_and_temperature_units",
+        "particle_and_gravity_constants",
+        "solar_mass_and_radius"
+      ],
+      "destinations": [
+        {
+          "path": "Code/include/transport/physics/SolarBackground.hpp"
+        },
+        {
+          "path": "Code/src/physics/SolarBackground.cpp"
+        },
+        {
+          "path": "Code/data/solar/model_agss09.dat"
+        },
+        {
+          "path": "Code/data/solar/Nuclear_Data.txt"
+        }
+      ],
+      "intentional_differences": [
+        {
+          "category": "units",
+          "description": "The public interface uses explicit kelvin, grams, centimeters, seconds, GeV, and inverse cubic centimeters instead of natural-unit library types.",
+          "behavior_change": false
+        },
+        {
+          "category": "data_loading",
+          "description": "Construction requires explicit paths to project-owned table copies and has no PROJECT_DIR locator or reference-checkout fallback.",
+          "behavior_change": true
+        },
+        {
+          "category": "data_format",
+          "description": "Project copies normalize record formatting only: Nuclear_Data.txt uses LF instead of legacy CR delimiters, and the AGSS09 table drops trailing horizontal whitespace and gains a final LF; data fields and attribution text are unchanged.",
+          "behavior_change": false
+        },
+        {
+          "category": "validation_and_domain",
+          "description": "Malformed inputs and invalid radii raise exceptions; exterior enclosed mass stays at the solar mass, target number density vanishes, escape speed uses the point-mass solution, and exterior temperature is rejected.",
+          "behavior_change": true
+        },
+        {
+          "category": "input_contract",
+          "description": "The loader accepts the fixed 35-column, 1968-row AGSS09 table shape and required radial endpoints used by this project rather than an open-ended solar-table format.",
+          "behavior_change": true
+        }
+      ],
+      "preserved_behaviors": [
+        {
+          "id": "horner_interpolation",
+          "description": "Steffen interval polynomials use the patched Horner evaluation order from the fixed reference checkout."
+        },
+        {
+          "id": "escape_profile_numerics",
+          "description": "Each escape-speed-squared node uses one 30-point Gauss-Legendre integral over the full radial interval; escape-speed squared is interpolated before taking the square root."
+        },
+        {
+          "id": "number_density_order",
+          "description": "Each isotope number density is formed at every radial node before its own Steffen interpolation is constructed."
+        },
+        {
+          "id": "isotopic_abundances",
+          "description": "Nuclear_Data.txt isotope abundances are used verbatim, including the calcium entries whose sum is 1.00003; they are not renormalized."
         }
       ]
     }

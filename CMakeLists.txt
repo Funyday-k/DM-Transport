@@ -21,7 +21,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(transport_reference_physics
-  Code/src/physics/ScatteringPhysics.cpp)
+  Code/src/physics/ScatteringPhysics.cpp
+  Code/src/physics/SolarBackground.cpp)
 target_include_directories(transport_reference_physics PUBLIC Code/include)
 target_compile_features(transport_reference_physics PUBLIC cxx_std_14)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -48,6 +49,17 @@ if(BUILD_TESTING)
     PRIVATE transport_reference_physics)
   add_test(NAME scattering_physics COMMAND test_scattering_physics)
   set_tests_properties(scattering_physics PROPERTIES TIMEOUT 10)
+
+  add_executable(test_solar_background
+    Code/tests/test_solar_background.cpp)
+  target_link_libraries(test_solar_background
+    PRIVATE transport_reference_physics)
+  add_test(NAME solar_background
+    COMMAND test_solar_background
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt
+            ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(solar_background PROPERTIES TIMEOUT 10)
 
   find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
   add_test(NAME project_contract

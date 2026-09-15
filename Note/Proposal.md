@@ -318,7 +318,7 @@ $$
 * solar temperature
 * nuclear abundances
 
-这些源码用于审计和最小移植，不作为本项目链接库，也不在原仓库修改或编译。参考提交、源码位置、许可证和依赖版本随移植记录；按当前项目约定不做源码或目标文件哈希验证。
+这些源码用于审计和最小移植，不作为本项目链接库，也不在原仓库修改或编译。参考提交、源码位置、许可证和依赖版本随移植记录；可重复性范围与验证门统一见 Task_Plan。
 
 ### 第二，ground-truth trajectory benchmark
 
@@ -371,17 +371,20 @@ DM-Transport: transport_reference_physics
 
 T02 只在 DM-Transport 中拆出并移植散射链；参考文件保持原样。传播器与 trajectory control 继续作为源码依据，不进入本阶段的移植闭包。
 
+<a id="solar-background"></a>
+
 ## 7.1 `SolarBackground`
 
-项目内背景适配层从固定太阳表提供以下概念接口：
+项目内背景适配层由调用方显式传入项目数据路径，并以 cgs 提供以下核心接口：
 
 ```cpp
-double temperature(double r);
-double mass_enclosed(double r);
-double escape_speed(double r);
-double gravitational_potential(double r);
-double number_density(int target, double r);
+double temperature_K(double r_cm);
+double mass_enclosed_g(double r_cm);
+double escape_speed_cm_s(double r_cm);
+double number_density_cm3(std::size_t target_index, double r_cm);
 ```
+
+固定 AGSS09 表包含 1968 个数值行；项目内加载器补中心与光球合成端点，并将 29 个丰度列按核数据映射为 63 个同位素靶。各靶数密度先在每个径向节点由质量密度、丰度、同位素比例和核质量计算，再作 Steffen 单调三次插值；逃逸速度平方在节点用 30 点 Gauss–Legendre 积分构造，再作同类插值。外域延拓和非法输入的异常行为属于接口契约，调用端不依赖隐式当前目录或参考仓库路径。
 
 这一层只描述太阳。
 
@@ -422,7 +425,7 @@ public:
 };
 ```
 
-靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。太阳背景适配层同样声明自然单位，跨语言文件按 Task_Plan 转为 `r_cm`、`v_cm_s`、`rate_s_inv` 等显式单位。
+靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。散射适配器内部可保留固定参考的自然单位，但与 cgs `SolarBackground` 及跨语言文件的转换边界必须显式；文件字段按 Task_Plan 使用 `r_cm`、`v_cm_s`、`rate_s_inv` 等单位名。
 
 若保留 `cos_scattering_angle` 诊断，它必须标明是旧实现围绕入射实验室 DM 速度轴抽取的变量，不是一般运动靶标下的相对速度散射角。旧角采样和 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。MVP 固定为待 T03 验证的 SD 恒截面模型；low-mass 分支是显式配置开关，不是由低质量自动启用。移植先保持旧抽样映射，任何物理修正单独建立回归基线。
 
@@ -2245,7 +2248,7 @@ $$
 \text{T01 manifest and outputs}.
 $$
 
-比较对象必须来自 T01 已保存的固定输出；不为生成新一轮“before”结果而修改或编译参考仓库。T02/T03 当前尚未通过。
+比较对象必须来自 T01 已保存的固定输出；不为生成新一轮“before”结果而修改或编译参考仓库。当前通过状态与尚缺的验证证据只在 [Task_Plan §8](Task_Plan.md#current-status) 维护。
 
 以下 Milestone 保留为主题路线，不是实际顺序；实施依赖、近期 T00–T03 范围以及 G0–G6 科学验收以 Task_Plan 为准。尤其参数化 exterior 是边界与人工源闭环的前置工作；有限年龄 G4 和高 opacity G5 不因性能任务而交换含义。
 

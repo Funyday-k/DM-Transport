@@ -19,6 +19,10 @@ namespace {
 using transport::physics::SolarBackground;
 using transport::physics::SolarTarget;
 
+// Horner endpoint evaluation and libm square roots have small compiler-dependent
+// rounding differences; this remains far below the source table precision.
+constexpr double crossPlatformRelativeTolerance = 1.0e-12;
+
 void require(bool condition, const std::string& message) {
     if (!condition) {
         throw std::runtime_error(message);
@@ -158,14 +162,14 @@ void test_reference_nodes(const SolarBackground& background) {
                   0.0000004 * solar_mass_g,
                   "first AGSS09 enclosed-mass node", 2.0e-15);
     require_close(background.mass_enclosed_g(solar_radius_cm), solar_mass_g,
-                  "surface enclosed mass", 2.0e-15);
+                  "surface enclosed mass", crossPlatformRelativeTolerance);
 
     require_close(background.temperature_K(0.0), 1.549e7,
                   "central temperature", 2.0e-15);
     require_close(background.temperature_K(0.96950 * solar_radius_cm),
                   1.544e5, "AGSS09 temperature node", 2.0e-15);
     require_close(background.temperature_K(solar_radius_cm), 5800.0,
-                  "photosphere temperature", 2.0e-15);
+                  "photosphere temperature", crossPlatformRelativeTolerance);
     require_close(background.number_density_cm3(0, 0.0),
                   3.2580314157719068e25,
                   "central H-1 number density", 2.0e-14);
@@ -179,7 +183,8 @@ void test_reference_nodes(const SolarBackground& background) {
     require_close(background.number_density_cm3(
                       0, 0.50025 * solar_radius_cm),
                   5.8042676968996363e23,
-                  "off-node H-1 number-density interpolation", 2.0e-13);
+                  "off-node H-1 number-density interpolation",
+                  crossPlatformRelativeTolerance);
     // The source nuclear table's Ca fractions sum to 1.00003.  This selected
     // density changes if those fractions are silently normalized.
     require_close(background.number_density_cm3(34, 0.0),
@@ -195,10 +200,11 @@ void test_escape_speed_and_exterior(const SolarBackground& background) {
                   "central escape speed", 0.0, 1.0e4);
     require_close(background.escape_speed_cm_s(solar_radius_cm),
                   6.176755830414014e7,
-                  "surface escape speed", 3.0e-15);
+                  "surface escape speed", crossPlatformRelativeTolerance);
     require_close(background.escape_speed_cm_s(2.0 * solar_radius_cm),
                   4.3676259334192932e7,
-                  "exterior point-mass escape speed", 3.0e-15);
+                  "exterior point-mass escape speed",
+                  crossPlatformRelativeTolerance);
     require(background.mass_enclosed_g(2.0 * solar_radius_cm) == solar_mass_g,
             "exterior enclosed mass must equal the solar mass");
     require(background.number_density_cm3(

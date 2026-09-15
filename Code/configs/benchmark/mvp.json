@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "contract_id": "bootstrap_reference_cpu_v1",
+  "model": {
+    "mass_GeV": 0.1,
+    "interaction": "SD",
+    "spin": 0.5,
+    "light": true,
+    "proton_relative_coupling": 1.0,
+    "neutron_relative_coupling": 0.0,
+    "electron_cross_section_cm2": 0.0,
+    "form_factor": "Contact",
+    "solar_target_policy": "damascus_default_isotopes",
+    "rate_interpolation_points": 0
+  },
+  "state": {
+    "coordinates": ["r", "v", "mu"],
+    "occupation": "integral_J_f_over_cell",
+    "operator_convention": "row_rates_column_occupation",
+    "flatten_order": ["r", "v", "mu"],
+    "grid_cells": [30, 40, 8],
+    "mu_faces": [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0],
+    "speed_domain": {
+      "escape_multiplier": 1.5,
+      "thermal_multiplier": 6.0
+    }
+  },
+  "units": {
+    "radius": "cm",
+    "speed": "cm/s",
+    "specific_energy": "cm^2/s^2",
+    "mass": "GeV",
+    "thermal_energy": "eV",
+    "rate": "s^-1",
+    "source": "particles/s",
+    "phase_space_volume": "cm^6/s^3"
+  },
+  "boundary": {
+    "policy": "legacy_1au_removal",
+    "escape_radius_Rsun": 1.0,
+    "legacy_matching_radius_Rsun": 1.1,
+    "outer_removal_radius_au": 1.0,
+    "numeric_overflow": "diagnose_and_expand",
+    "time_origin": "first_capture",
+    "clock": "physical_inside_plus_outside"
+  },
+  "source": {
+    "definition": "first_post_collision_binding",
+    "attempt_policy": "fixed_attempt_limit_keep_unresolved",
+    "halo": {
+      "distribution": "SHM",
+      "local_density_GeV_cm3": 0.4,
+      "v0_km_s": 220.0,
+      "observer_velocity_km_s": [11.1, 232.2, 7.3],
+      "escape_speed_km_s": 544.0
+    }
+  },
+  "tolerances": {
+    "probability_row_sum_abs": 1e-12,
+    "generator_scaled_row_sum_abs": 1e-12,
+    "steady_relative_residual": 1e-8,
+    "source_sink_relative_mismatch": 1e-6,
+    "integrated_observable_relative_budget": 0.05,
+    "streaming_fake_escape_absolute_budget": null,
+    "tail_observable_absolute_budget": null,
+    "negative_occupation_tolerance": null
+  },
+  "pending_gates": {
+    "streaming_fake_escape_absolute_budget": {
+      "reason": "Requires a declared observable and physical observation window.",
+      "must_set_before": "T07 acceptance"
+    },
+    "tail_observable_absolute_budget": {
+      "reason": "Requires pilot statistics and a declared tail observable.",
+      "must_set_before": "T06 tail acceptance"
+    },
+    "negative_occupation_tolerance": {
+      "reason": "Requires the occupation scale and solver normalization.",
+      "must_set_before": "T09 acceptance"
+    }
+  },
+  "benchmark": {
+    "cross_sections_cm2": [1e-36, 1e-34],
+    "seed": 20260915,
+    "mpi_ranks": 1,
+    "attempts_per_case": 16,
+    "trajectory_wall_timeout_s": 2.0,
+    "case_timeout_s": 60,
+    "ctest_timeout_s": 60,
+    "ctest_total_timeout_s": 600
+  }
+}

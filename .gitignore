@@ -1,0 +1,14 @@
+# Local build trees and generated simulation artifacts.
+/build*/
+/Output/
+/.venv/
+__pycache__/
+*.py[cod]
+*.o
+*.a
+*.so
+*.dylib
+*.dSYM/
+*.profraw
+*.profdata
+.DS_Store

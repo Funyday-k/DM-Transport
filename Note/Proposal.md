@@ -318,7 +318,7 @@ $$
 * solar temperature
 * nuclear abundances
 
-这些源码用于审计和最小移植，不作为本项目链接库，也不在原仓库修改或编译。参考提交、文件哈希、许可证和依赖版本必须随移植记录。
+这些源码用于审计和最小移植，不作为本项目链接库，也不在原仓库修改或编译。参考提交、源码位置、许可证和依赖版本随移植记录；按当前项目约定不做源码或目标文件哈希验证。
 
 ### 第二，ground-truth trajectory benchmark
 
@@ -341,12 +341,12 @@ $$
 
 # 6. 不建议复制整个代码，新仓库应该这样产生
 
-第一阶段不 fork、不修改也不在 DaMaSCUS-SUN-EVAP 中编译。T02 从固定提交审计并移植串行微观物理的最小闭包，删除 MPI、trajectory、snapshot 和参数扫描依赖；每个移植文件记录来源、哈希、许可证及有意差异。项目不通过外部源码路径、`add_subdirectory` 或参考仓库 build 产物建立隐式耦合。
+第一阶段不 fork、不修改也不在 DaMaSCUS-SUN-EVAP 中编译。T02 从固定提交审计并移植串行微观物理的最小闭包，删除 MPI、trajectory、snapshot 和参数扫描依赖；每个移植文件记录来源位置、许可证及有意差异。项目不通过外部源码路径、`add_subdirectory` 或参考仓库 build 产物建立隐式耦合。
 
 ```text
 DaMaSCUS-SUN-EVAP 固定提交（只读源码事实）
               + T01 固定输出
-                       │ 审计、最小移植、parity
+                       │ 审计、最小移植
                        ▼
 DM-Transport: transport_reference_physics
                        │
@@ -430,7 +430,7 @@ public:
 
 # 8. 最重要的原则：旧 trajectory simulator 保持只读
 
-旧 trajectory simulator 只提供固定源码事实和 T01 基线，不再承担新模块客户端。DM-Transport 在自己的命名空间中维护最小移植物理层，并以来源哈希、固定向量和分布门检查一致性：
+旧 trajectory simulator 只提供固定源码事实和 T01 基线，不再承担新模块客户端。DM-Transport 在自己的命名空间中维护最小移植物理层，并以固定来源记录、固定向量和分布门检查一致性：
 
 ```text
 只读 Trajectory_Simulator ──► T01 reference outputs
@@ -2258,18 +2258,18 @@ T02 在 DM-Transport 内实现：
 ```text
 SolarBackground（最小太阳表接口）
 ScatteringPhysics（串行 rate 与单碰撞）
-Provenance manifest（来源、哈希、许可证、差异）
+Provenance manifest（来源位置、许可证、有意差异）
 ```
 
-旧 trajectory simulator 保持只读；项目内 physics target 不带入 MPI/legacy 调度，并与 T01 固定输出比较。
+旧 trajectory simulator 保持只读；项目内 physics target 不带入 MPI/legacy 调度，并提供 T03 系统回归所需的固定输入接口。
 
 这一阶段**不写 Markov solver**。
 
 Gate：
 
-* scattering rate identical；
-* single collision distribution identical；
-* 直接移植的固定种子样本尽量逐事件一致；若修正已知物理问题，则保存独立修正基线并通过统计回归。
+* 项目内 consumer 只链接 physics target 即可查询背景、直接 rate 和单碰撞；
+* 来源位置、许可证及有意差异记录完整；
+* 零速极限、稳定分支和固定数值检查通过。rate、单碰撞分布与固定种子的系统 parity 由 T03 验收。
 
 ---
 

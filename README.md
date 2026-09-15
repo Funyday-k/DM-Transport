@@ -2,7 +2,7 @@
 
 太阳暗物质输运研究项目，参考 DaMaSCUS-SUN-EVAP 的太阳背景与微观散射，研究暗物质占据数、密度和蒸发通量。
 
-项目处于初步开发阶段，已具备有限体积网格、所属单元保守源投影、基准配置和测试入口；完整输运求解器及物理验证尚未完成。
+项目处于初步开发阶段，已具备有限体积网格、所属单元保守源投影、Maxwell 热浴平均相对速度、基准配置和测试入口；完整输运求解器及物理验证尚未完成。
 
 ## 构建与测试
 
@@ -14,7 +14,7 @@ cmake --build build --parallel 2
 ctest --test-dir build --output-on-failure
 ```
 
-参数见 [MVP 配置](Code/configs/benchmark/mvp.json)。[基线工具](Code/python/run_baseline.py) 用于读取既有 DaMaSCUS-SUN-EVAP 基线产物，使用 `--help` 查看参数。参考仓库严格只读，不在其中修改或编译；所需实现须移植到本项目后再构建。默认测试覆盖网格、源投影和项目约定，尚不代表输运物理验收通过。
+参数见 [MVP 配置](Code/configs/benchmark/mvp.json)。[基线工具](Code/python/run_baseline.py) 用于读取本项目内保存的 DaMaSCUS-SUN-EVAP 基线产物，使用 `--help` 查看参数。参考仓库严格只读，不在其中修改或编译；所需实现须移植到本项目后再构建。默认测试覆盖上述实现与项目约定，尚不代表输运物理验收通过。
 
 ## 文档
 

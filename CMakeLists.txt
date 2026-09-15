@@ -20,6 +20,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(transport_projector PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(transport_reference_physics
+  Code/src/physics/ScatteringPhysics.cpp)
+target_include_directories(transport_reference_physics PUBLIC Code/include)
+target_compile_features(transport_reference_physics PUBLIC cxx_std_14)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(transport_reference_physics PRIVATE
+    -Wall -Wextra -Wpedantic)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(test_phase_space_grid Code/tests/test_phase_space_grid.cpp)
@@ -33,6 +42,13 @@ if(BUILD_TESTING)
   add_test(NAME phase_space_projector COMMAND test_phase_space_projector)
   set_tests_properties(phase_space_projector PROPERTIES TIMEOUT 10)
 
+  add_executable(test_scattering_physics
+    Code/tests/test_scattering_physics.cpp)
+  target_link_libraries(test_scattering_physics
+    PRIVATE transport_reference_physics)
+  add_test(NAME scattering_physics COMMAND test_scattering_physics)
+  set_tests_properties(scattering_physics PROPERTIES TIMEOUT 10)
+
   find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
   add_test(NAME project_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_project_contract.py)
@@ -40,4 +56,8 @@ if(BUILD_TESTING)
   add_test(NAME baseline_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_baseline.py)
   set_tests_properties(baseline_contract PROPERTIES TIMEOUT 10)
+  add_test(NAME reference_physics_provenance
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_reference_physics_provenance.py)
+  set_tests_properties(reference_physics_provenance PROPERTIES TIMEOUT 10)
 endif()

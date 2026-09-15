@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "component": "transport_reference_physics",
+  "upstreams": [
+    {
+      "id": "damascus_sun_evap",
+      "repository": "https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP.git",
+      "commit": "b5678f5b193aa567ca10715c2a6c764c9e72eec7",
+      "license": {
+        "status": "verified",
+        "spdx_expression": "MIT",
+        "upstream_path": "LICENSE",
+        "local_notice_path": "Code/provenance/licenses/DaMaSCUS-SUN-EVAP-MIT.txt"
+      }
+    }
+  ],
+  "source_files": [
+    {
+      "id": "solar_model",
+      "upstream_id": "damascus_sun_evap",
+      "path": "src/Solar_Model.cpp",
+      "fragments": [
+        {
+          "id": "thermal_average_relative_velocity",
+          "start_line": 616,
+          "end_line": 649
+        }
+      ]
+    }
+  ],
+  "port_units": [
+    {
+      "id": "mean_relative_speed",
+      "derived_from": [
+        "thermal_average_relative_velocity"
+      ],
+      "destinations": [
+        {
+          "path": "Code/include/transport/physics/ScatteringPhysics.hpp"
+        },
+        {
+          "path": "Code/src/physics/ScatteringPhysics.cpp"
+        }
+      ],
+      "intentional_differences": [
+        {
+          "category": "units",
+          "description": "The project interface accepts kelvin, GeV, and cm/s and returns cm/s instead of exposing natural-unit library types.",
+          "behavior_change": false
+        },
+        {
+          "category": "scope",
+          "description": "The calculation is a stateless project-local function with no solar model, interpolation, MPI, or trajectory dependency.",
+          "behavior_change": false
+        },
+        {
+          "category": "validation",
+          "description": "Invalid and unrepresentable inputs raise explicit standard exceptions.",
+          "behavior_change": true
+        }
+      ]
+    }
+  ],
+  "scope_exclusions": [
+    "mpi_orchestration",
+    "trajectory_propagation",
+    "snapshot_io",
+    "parameter_scan",
+    "reference_build_artifacts"
+  ]
+}

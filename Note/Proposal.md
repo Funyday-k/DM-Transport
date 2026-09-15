@@ -5,9 +5,9 @@
 **项目工作名：** `SolarDM-Transport`
 **核心目标：** 从 DaMaSCUS-SUN 已有的微观散射物理出发，建立保留轨道相位的多尺度动理学输运框架，求解暗物质的绝对相空间占据数、径向数密度、蒸发通量和太阳外弱束缚分布。直接输运求解为主线，完整轨迹和受控加速轨迹提供数值验证。
 
-**维护说明（2026-09-14）：** 本稿保留原有 75 节科学路线，依据本地 DaMaSCUS-SUN-EVAP 源码、数值方法审阅与已核验文献，修正接口、捕获归一化、有限体积网格、边界和物理时间等约定。科学推导、工程设计与源码依据统一维护在本文；项目固定文档规则见 [README](../README.md). 原始文本逐字保存在 [初稿存档](archive/Proposal_2026-09-14_v1.md)。可执行科学任务、依赖与 G0–G6 验收以 [Task_Plan.md](Task_Plan.md) 为准；源码事实见 [源码依据附录](Proposal.md#code-reference)；后端、缓存、核结构及性能任务见 [工程与性能设计附录](Proposal.md#performance-design)。文中的 Milestone / PR 保留为路线说明，不另行改变 T / G 科学任务编号与顺序。
+**维护说明（2026-09-15）：** 本稿保留原有 75 节科学路线，依据 DaMaSCUS-SUN-EVAP 源码、数值方法审阅与已核验文献，修正接口、捕获归一化、有限体积网格、边界和物理时间等约定。科学推导、工程设计与源码依据统一维护在本文；项目固定文档规则见 [README](../README.md). 原始文本逐字保存在 [初稿存档](archive/Proposal_2026-09-14_v1.md)。可执行科学任务、依赖与 G0–G6 验收以 [Task_Plan.md](Task_Plan.md) 为准；源码事实见 [源码依据附录](Proposal.md#code-reference)；后端、缓存、核结构及性能任务见 [工程与性能设计附录](Proposal.md#performance-design)。文中的 Milestone / PR 保留为路线说明，不另行改变 T / G 科学任务编号与顺序。
 
-当前已开始 Git、配置、基线工具和有限体积网格基础的实施，执行状态统一见 Task_Plan。本稿区分已有能力与待实现能力，任何物理正确性、收敛性或性能收益都需对应验证后才能成立。V1 先闭合 CPU reference 的绝对占据与 MC 对照；optimized 后端复用同一物理和数据契约，分别验收。
+当前已冻结初始契约与 legacy reference，并实现有限体积几何和保守源投影基础；执行状态及证据统一见 Task_Plan。DaMaSCUS-SUN-EVAP 是严格只读素材库，全部新增代码和构建留在 DM-Transport。本稿区分已有能力与待实现能力，任何物理正确性、收敛性或性能收益都需对应验证后才能成立。V1 先闭合 CPU reference 的绝对占据与 MC 对照；optimized 后端复用同一物理和数据契约，分别验收。
 
 设计将无碰撞假蒸发、完整单元平均和源投影列为 V1 门槛；将真实返回时间落实为 T17 的延迟边界契约；将 AP、确定性 kinetic–diffusion、DDMC 列为 T18 的三个候选。WE、伴随采样及宏态约化按证据逐步启用，不要求 MVP 同时实现所有算法。新增意见及文献结论在对应章节原位更新，不新建独立审阅或性能文档。
 
@@ -302,7 +302,7 @@ $$
 
 它有三个角色：
 
-### 第一，microscopic physics library
+### 第一，microscopic physics 素材库
 
 目前已有：
 
@@ -318,11 +318,11 @@ $$
 * solar temperature
 * nuclear abundances
 
-这些物理全部应该复用。DaMaSCUS-SUN 本身已经是 C++/CMake/MPI 工程，而且具有 `src/`、`include/`、`tests/` 等结构。
+这些源码用于审计和最小移植，不作为本项目链接库，也不在原仓库修改或编译。参考提交、文件哈希、许可证和依赖版本必须随移植记录。
 
 ### 第二，ground-truth trajectory benchmark
 
-在 DaMaSCUS 尚且能够运行的截面区域：
+T01 已保存 DaMaSCUS 可运行截面区域的初始结果：
 
 $$
 10^{-38},
@@ -331,69 +331,36 @@ $$
 \ldots
 $$
 
-继续使用完整 trajectory MC。
+这些固定输出用于首轮 transport parity。需要新增 trajectory 统计时，应在 DM-Transport 内移植必要的受控入口，或由用户另行提供新的只读基线产物。
 
-这些结果将验证 transport solver。
+### 第三，capture/source 算法依据
 
-### 第三，capture/source generator
-
-现有 Capture mode 已在首次散射后负能量时停止。第一阶段补充首捕获速度/方向的完整输出、入射物理率、计数和误差，形成 freshly captured source；不重写已有停止机制。
+参考 Capture mode 已在首次散射后负能量时停止。T10 在 DM-Transport 内按固定实现和基线移植首捕获状态、入射物理率、计数与误差接口，形成 freshly captured source；不回写参考仓库。
 
 ---
 
 # 6. 不建议复制整个代码，新仓库应该这样产生
 
-第一阶段不要直接 fork 出两份逐渐分叉的物理代码。
-
-目标是让两个客户端链接一份共享物理实现；当前先用显式源码路径和独立 build 目录适配已存在的仓库，再提取共享 target。下面是目标结构示意，不表示当前已有可安装的物理包，也不要求马上整体搬移目录：
+第一阶段不 fork、不修改也不在 DaMaSCUS-SUN-EVAP 中编译。T02 从固定提交审计并移植串行微观物理的最小闭包，删除 MPI、trajectory、snapshot 和参数扫描依赖；每个移植文件记录来源、哈希、许可证及有意差异。项目不通过外部源码路径、`add_subdirectory` 或参考仓库 build 产物建立隐式耦合。
 
 ```text
-DaMaSCUS-SUN/
-│
-├── include/
-│   ├── physics/
-│   ├── trajectory/
-│   └── transport/
-│
-├── src/
-│   ├── physics/
-│   ├── trajectory/
-│   └── transport/
-│
-├── apps/
-│   ├── damascus_trajectory.cpp
-│   ├── build_transport_operator.cpp
-│   ├── solve_transport.cpp
-│   └── validate_transport.cpp
-│
-├── tests/
-│
-├── python/
-│
-└── data/
+DaMaSCUS-SUN-EVAP 固定提交（只读源码事实）
+              + T01 固定输出
+                       │ 审计、最小移植、parity
+                       ▼
+DM-Transport: transport_reference_physics
+                       │
+                       ▼
+              transport solver
 ```
 
-CMake 最后形成：
-
-```text
-damascus_physics
-        │
-        ├───────────────┐
-        ▼               ▼
-trajectory_simulator   transport_solver
-```
-
-这样 trajectory 与 transport 使用**完全相同的太阳模型和散射函数**。
-
-不要复制散射公式。
-
-目前可用的是混合静态库 `lib_damascus_sun`，独立 `damascus_physics` 的导出/集成是 T02 新工作。工程布局与基线保护方式以 Task_Plan 为准。
+这意味着两边不再共享同一个编译 target；可信度由固定来源和 T03 回归维持。若参考算法以后升级，先建立新的来源版本与基线，再把差异作为独立变更移植，不能直接改动素材库或无记录地复制公式。
 
 ---
 
-# 7. 第一阶段必须进行的源码重构
+# 7. 第一阶段必须进行的项目内移植
 
-目前 `Simulation_Trajectory.cpp` 中同时包含了：
+初始基线的 `Simulation_Trajectory.cpp` 同时包含：
 
 * propagator；
 * 调用 `Solar_Model` 的 scattering rate；
@@ -402,11 +369,11 @@ trajectory_simulator   transport_solver
 * collision；
 * trajectory control。
 
-应该拆开。
+T02 只在 DM-Transport 中拆出并移植散射链；参考文件保持原样。传播器与 trajectory control 继续作为源码依据，不进入本阶段的移植闭包。
 
 ## 7.1 `SolarBackground`
 
-从当前 `Solar_Model` 提供：
+项目内背景适配层从固定太阳表提供以下概念接口：
 
 ```cpp
 double temperature(double r);
@@ -424,7 +391,7 @@ double number_density(int target, double r);
 
 ## 7.2 `ScatteringPhysics`
 
-实际链条是：
+参考实现中的实际链条是：
 
 ```text
 Solar_Model rate
@@ -435,78 +402,54 @@ Solar_Model rate
 → Scatter 更新速度
 ```
 
-本版没有独立 `Sample_Momentum_Transfer()`。提取后的主接口以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。示意接口如下；`Vector3`、`DMModel` 与 `RNG` 是待定义类型，`_nu` 表示沿用 libphysica 自然单位：
+本版没有独立 `Sample_Momentum_Transfer()`。移植后的主接口以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。示意契约如下，具体类型以项目内实现为准，`_nu` 表示与固定参考一致的自然单位：
 
 ```cpp
 struct CollisionSample {
     Vector3 velocity_out_nu;
-    int target_id;
+    Vector3 target_velocity_nu;
+    int target_index;
+    double cos_scattering_angle;
 };
 
 class ScatteringPhysics {
 public:
-    double total_rate(double radius_nu, double speed_nu,
-                      const DMModel& dm) const;
-
-    CollisionSample sample_collision(double radius_nu,
-                                     const Vector3& velocity_in_nu,
-                                     const DMModel& dm,
-                                     RNG& rng) const;
+    double total_rate(const SolarBackground&, const DMModel&,
+                      double radius_nu, double speed_nu) const;
+    CollisionSample sample_collision(
+        const SolarBackground&, const DMModel&, double radius_nu,
+        const Vector3& velocity_in_nu, LegacyRNG& rng);
 };
 ```
 
 靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。太阳背景适配层同样声明自然单位，跨语言文件按 Task_Plan 转为 `r_cm`、`v_cm_s`、`rate_s_inv` 等显式单位。
 
-旧角采样的速度/参考轴及 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。MVP 固定为经 T03 验证的 SD 恒截面模型；low-mass 分支是显式配置开关，不是由低质量自动启用。纯提取保持旧抽样映射，任何物理修正单独建立回归基线。
+若保留 `cos_scattering_angle` 诊断，它必须标明是旧实现围绕入射实验室 DM 速度轴抽取的变量，不是一般运动靶标下的相对速度散射角。旧角采样和 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。MVP 固定为待 T03 验证的 SD 恒截面模型；low-mass 分支是显式配置开关，不是由低质量自动启用。移植先保持旧抽样映射，任何物理修正单独建立回归基线。
 
 ---
 
-# 8. 最重要的原则：旧 trajectory simulator 必须改成新物理模块的客户端
+# 8. 最重要的原则：旧 trajectory simulator 保持只读
 
-最终：
-
-```cpp
-TrajectorySimulator
-```
-
-不再自己拥有散射物理。
-
-而应该调用：
-
-```cpp
-ScatteringPhysics
-```
-
-即：
+旧 trajectory simulator 只提供固定源码事实和 T01 基线，不再承担新模块客户端。DM-Transport 在自己的命名空间中维护最小移植物理层，并以来源哈希、固定向量和分布门检查一致性：
 
 ```text
-TrajectorySimulator
-      │
-      ├── SolarBackground
-      ├── ScatteringPhysics
-      └── BallisticPropagator
+只读 Trajectory_Simulator ──► T01 reference outputs
+                                      │
+                                      ▼ parity
+DM-Transport ScatteringPhysics ──► TransportOperator
 ```
 
-Transport solver 同样调用：
-
-```text
-TransportOperator
-      │
-      ├── SolarBackground
-      └── ScatteringPhysics
-```
-
-这样才能保证：
+目标关系是：
 
 $$
 \boxed{
-\text{trajectory physics}
-=
-\text{transport physics}
+\text{frozen trajectory reference}
+\simeq_{\mathrm{T03}}
+\text{transport physics port}
 }
 $$
 
-否则以后两个程序产生差异时，你永远不知道是 method difference 还是 physics implementation difference。
+两边不共享二进制，因此来源和差异审计是强制交付物；parity 只证明指定模型与输入域内的一致性，不能替代独立物理验证。
 
 ---
 
@@ -517,7 +460,7 @@ $$
 ```text
 old Scatter()
 vs
-new ScatteringPhysics::sample_collision()
+DM-Transport ScatteringPhysics::sample_collision()
 ```
 
 对于固定
@@ -558,7 +501,7 @@ $$
 \Gamma_{\rm scat}.
 $$
 
-要求在预先规定的统计与数值误差内一致；样本预算依尾部事件精度决定，以上数量仅为示例。纯重构尽可能保留固定种子逐事件映射；物理修正引起的随机映射变化单独记录并做分布回归。
+要求在预先规定的统计与数值误差内一致；样本预算依尾部事件精度决定，以上数量仅为示例。直接移植尽可能保留固定种子逐事件映射；物理修正引起的随机映射变化单独记录并做分布回归。
 
 **这一关没通过，不允许继续。**
 
@@ -943,7 +886,7 @@ $$
 
 # 18. 后续可以把 kernel MC 换成 deterministic/quasi-MC
 
-当前仓库没有 `Scattering_Rates.cpp`；rate 在 `Solar_Model.cpp`，碰撞链在 `Simulation_Trajectory.cpp` 并调用 obscura 角采样接口。
+只读参考仓库没有 `Scattering_Rates.cpp` 或独立 q 抽样 API；rate 位于 `Solar_Model.cpp`，靶选择、热靶速度和出射速度链位于 `Simulation_Trajectory.cpp`，其中角采样调用 obscura 接口。T02 在 DM-Transport 内移植这一最小调用闭包。
 
 未来可从实际靶热速度分布、靶选择与相对运动学出发，推导匹配模型的积分变量和权重，再尝试 quadrature 或 Sobol / quasi Monte Carlo。不能假定已有独立 q 采样 API，也不能未经核验就把旧角变量当成相对速度散射角。
 
@@ -1039,7 +982,7 @@ $$
 
 # 21. Capture source 的 MVP 实现
 
-已有 `Enable_Capture_Mode(true)` 在首次散射后 \(E<0\) 时停止；这里 E 是比能量 \(v^2/2+\Phi(r)\)。本阶段新增首捕获 `(r,v,mu)`、三维原始状态/权重、轨迹标识和计数输出，不重新实现停止判据。
+只读参考的 `Enable_Capture_Mode(true)` 在首次散射后 \(E<0\) 时停止；这里 E 是比能量 \(v^2/2+\Phi(r)\)。本阶段在 DM-Transport 内移植该判据并新增首捕获 `(r,v,mu)`、三维原始状态/权重、轨迹标识和计数输出。
 
 注意旧 `E_capture_eV` 是粒子能量，不能直接代入比能量公式。Capture mode 当前只打印汇总，尚未输出完整源样本。
 
@@ -1055,7 +998,7 @@ $$
 
 源生成优先固定尝试数；等权且完整分类时可直接写 \(C_\alpha=R_{\rm in}n_{{\rm cap},\alpha}/n_{\rm attempts}\)。保存 attempted、captured、classified、unresolved、failure 计数及 raw/valid 口径、权重和误差，不删除未决样本后悄悄归一化。捕获概率与 \(\eta\) 来自同批样本时保留其相关性。
 
-`Data_Generation.cpp` 提供现有 halo/trajectory 调用入口。普通模式和 Capture mode 的光学深度推进精度不同，需比较首次捕获分布的统计/容差收敛，不能预设同 seed 逐事件一致。另新增显式已捕获初态入口，用同一 source 运行 MC benchmark；旧 `Simulate()` 默认未捕获 halo 注入，直接传入束缚态会触发保护判定。
+参考 `Data_Generation.cpp` 提供 halo/trajectory 调用依据。普通模式和 Capture mode 的光学深度推进精度不同；项目内移植需比较首次捕获分布的统计/容差收敛，不能预设同 seed 逐事件一致。本项目另实现显式已捕获初态入口，用同一 source 运行 MC benchmark；参考 `Simulate()` 默认未捕获 halo 注入，直接传入束缚态会触发保护判定。
 
 源投影优先使用原始连续捕获样本落入所属 FV 单元的加权计数；它对经验源的单元积分已经守恒，不因“最近格”这个称呼而需要被线性平滑替换。误差来自有限样本、单元内表示和阈值交叉格的闭合。T04/T10 比较所属格计数、加密网格，以及可选的正性保守 CIC/线性沉积；后者若跨边界、\(E=0\) 或不可达域分配权重，会产生额外偏差，不能宣称天然更准确。
 
@@ -1922,9 +1865,9 @@ C++。
 
 原因：
 
-* 直接复用 DaMaSCUS；
+* 与项目内移植的 C++ 微观闭包直接连接；
 * collision sampling 高效；
-* MPI 已存在。
+* 后续可在本项目内增加受控并行。
 
 ### Sparse solve
 
@@ -2037,7 +1980,7 @@ $$
 
 # 43. 第二个极强测试：Little's law
 
-Trajectory MC 能够给出平均 residence time 的 benchmark 时：
+项目内 trajectory port 或已保存基线能够给出平均 residence time benchmark 时：
 
 $$
 \boxed{
@@ -2069,9 +2012,9 @@ wall/step/scattering cutoff 保留的 residence prefix 不是完整寿命；数�
 
 # 44. 第三个测试：外部 density
 
-选一个仍可以完整运行的 benchmark。
+选择一个已有完整固定输出或可由项目内 trajectory port 完成的 benchmark。
 
-Trajectory MC 直接统计：
+项目内或已保存的 Trajectory MC 统计：
 
 $$
 n_{\rm out}^{\rm MC}(r).
@@ -2173,7 +2116,7 @@ DM-Transport/
     └── Figure/
 ```
 
-SolarBackground、ScatteringPhysics 及 legacy trajectory 的共享物理实现留在受控版本的 DaMaSCUS-SUN-EVAP，由本项目依赖同一实现。reference 与 optimized 共享物理/schema 和验证输入，不为加速复制一套不可追踪的散射公式。后端细节见附录 A；具体执行任务以 Task_Plan 为准。
+DaMaSCUS-SUN-EVAP 的固定提交只提供源码事实和已保存基线；项目内 `SolarBackground`、`ScatteringPhysics` 记录逐文件来源及有意差异。reference 与 optimized 在 DM-Transport 内共享这一移植物理层、schema 和验证输入，不为加速再复制一套散射公式。后端细节见附录 A；具体执行任务以 Task_Plan 为准。
 
 ---
 
@@ -2274,21 +2217,20 @@ MPI -n 200
 
 这对于以后论文复现非常重要。
 
-哈希或 counter-based 映射应规范、跨进程稳定，不能使用实现相关的 `std::hash` 或 MPI rank 决定逻辑样本。并行浮点归并允许声明的舍入差异；要区分同一随机样本集合、整数计数相同和最终浮点逐位相同。旧 trajectory 的 rank-based PRNG 在纯重构阶段先保留，避免把 RNG 更换混入物理回归。
+哈希或 counter-based 映射应规范、跨进程稳定，不能使用实现相关的 `std::hash` 或 MPI rank 决定逻辑样本。并行浮点归并允许声明的舍入差异；要区分同一随机样本集合、整数计数相同和最终浮点逐位相同。T02 项目内移植先保留与旧 trajectory 相容的随机调用顺序，避免把 RNG 更换混入物理回归。
 
 ---
 
 # 51. 推荐的开发阶段
 
-## Milestone 0 — Preserve the old simulator
+## Milestone 0 — Freeze the old simulator reference
 
 目标：
 
-> 确保重构没有改变 DaMaSCUS 的旧结果。
+> 固定只读 DaMaSCUS 来源和可复现的旧结果，不再改动参考仓库。
 
 完成：
 
-* 创建新 branch；
 * 建立 baseline benchmark；
 * 保存固定 seed 输出；
 * 保存 scattering rate；
@@ -2298,26 +2240,28 @@ MPI -n 200
 Gate：
 
 $$
-\text{refactor before}
+\text{saved legacy reference}
 =
-\text{refactor after}.
+\text{T01 manifest and outputs}.
 $$
+
+比较对象必须来自 T01 已保存的固定输出；不为生成新一轮“before”结果而修改或编译参考仓库。T02/T03 当前尚未通过。
 
 以下 Milestone 保留为主题路线，不是实际顺序；实施依赖、近期 T00–T03 范围以及 G0–G6 科学验收以 Task_Plan 为准。尤其参数化 exterior 是边界与人工源闭环的前置工作；有限年龄 G4 和高 opacity G5 不因性能任务而交换含义。
 
 ---
 
-# 52. Milestone 1 — Extract microscopic physics
+# 52. Milestone 1 — Port microscopic physics
 
-实现：
+T02 在 DM-Transport 内实现：
 
 ```text
-SolarBackground
-ScatteringPhysics
-BallisticPropagator
+SolarBackground（最小太阳表接口）
+ScatteringPhysics（串行 rate 与单碰撞）
+Provenance manifest（来源、哈希、许可证、差异）
 ```
 
-旧 trajectory simulator 改为调用这些模块。
+旧 trajectory simulator 保持只读；项目内 physics target 不带入 MPI/legacy 调度，并与 T01 固定输出比较。
 
 这一阶段**不写 Markov solver**。
 
@@ -2325,7 +2269,7 @@ Gate：
 
 * scattering rate identical；
 * single collision distribution identical；
-* 纯重构的固定种子 trajectory 尽量逐事件一致；若修正已知物理问题，则保存独立修正基线并通过统计回归。
+* 直接移植的固定种子样本尽量逐事件一致；若修正已知物理问题，则保存独立修正基线并通过统计回归。
 
 ---
 
@@ -2473,7 +2417,7 @@ $$
 
 ---
 
-# 56. Milestone 5 — Benchmark against full DaMaSCUS trajectories
+# 56. Milestone 5 — Benchmark against frozen and project-local trajectories
 
 至少选择三档：
 
@@ -2493,7 +2437,7 @@ $$
 \sigma\sim10^{-35}
 $$
 
-### C. Highest cross section where full MC remains feasible
+### C. Highest cross section where project-local full MC remains feasible
 
 例如：
 
@@ -2501,7 +2445,7 @@ $$
 10^{-33}\sim10^{-32}
 $$
 
-具体根据当前运行速度决定。
+具体根据 DM-Transport 内实现的运行速度决定。
 
 比较：
 
@@ -2531,7 +2475,7 @@ $$
 
 ## 56.1 T11/T15 的可选稀有事件轨迹分支
 
-当普通 MC 的稀有首达/尾部采样不足时，先尝试 Weighted Ensemble（WE）小原型。按 \(E/E_0\) 或 \((r,E)\) 等进度坐标分组，在固定物理时间间隔做带权 splitting/merging，底层仍调用已验证的轨迹。分箱只分配计算资源，不代替完整动力学状态。正确重采样保持条件期望中的加权路径分布；原理见 [Zhang、Zuckerman 与 Jasnow](https://arxiv.org/abs/0810.1963)。
+当普通 MC 的稀有首达/尾部采样不足时，先尝试 Weighted Ensemble（WE）小原型。按 \(E/E_0\) 或 \((r,E)\) 等进度坐标分组，在固定物理时间间隔做带权 splitting/merging，底层调用 DM-Transport 内已验证的轨迹实现。分箱只分配计算资源，不代替完整动力学状态。正确重采样保持条件期望中的加权路径分布；原理见 [Zhang、Zuckerman 与 Jasnow](https://arxiv.org/abs/0810.1963)。
 
 T11 先准备可完整续跑的状态：坐标/速度、真实时间、捕获和终点标记、必要的散射/外域相位状态、统计锚点与随机流。分裂后子路径权重和等于父权重，未来 RNG 独立；合并按权重随机选保留路径并承接总权重，不能平均成一条不存在的轨迹。
 
@@ -3067,7 +3011,7 @@ absolute units。
 画两条：
 
 ```text
-DaMaSCUS full trajectories
+Frozen/project-local trajectory MC
 Transport operator
 ```
 
@@ -3295,11 +3239,11 @@ Freeze trajectory benchmarks and fixed seeds.
 No physics changes.
 ```
 
-## PR-1 — Physics extraction
+## PR-1 — Physics port
 
 ```text
-Extract SolarBackground and ScatteringPhysics.
-Legacy trajectory outputs must remain unchanged.
+Port the minimal SolarBackground and ScatteringPhysics closure.
+Keep provenance and match frozen legacy outputs.
 ```
 
 ## PR-2 — Single-collision tests
@@ -3376,43 +3320,9 @@ Identify need for AP/diffusion treatment.
 
 ---
 
-# 73. 第一轮 Codex 的具体任务
+# 73. 当前关键实施任务
 
-第一次不要告诉 Codex：
-
-> “实现一个 Markov dark matter solver。”
-
-任务太大。
-
-先完成 T00 契约和 T01 版本/依赖/数据基线；之后 T02 的提取任务是：
-
-> **Refactor the existing DaMaSCUS-SUN trajectory code so that all microscopic DM scattering physics is provided by a standalone `ScatteringPhysics` module, while preserving the legacy trajectory simulator and its numerical outputs. Do not implement a transport solver yet.**
-
-要求它：
-
-1. 阅读：
-
-   * `Simulation_Trajectory.cpp`
-   * `Simulation_Utilities.cpp`
-   * `Reflection_Spectrum.cpp`
-   * 实际链接的 obscura SD / angular-sampling 实现
-   * `Solar_Model.cpp`
-   * 对应 headers。
-
-2. 列出：
-
-   * 哪些函数属于 solar background；
-   * 哪些属于 collision physics；
-   * 哪些属于 propagation；
-   * 哪些属于 trajectory control。
-
-3. 建立 regression tests。
-
-4. 重构以后运行同一 fixed seed benchmark。
-
-5. 给出 before/after diff。
-
-按 Task_Plan 完成 T02/T03 与 G0 回归后，再进入 T05/T06 的 collision kernel。近期实施范围仍为 T00–T03，T04 可独立并行；本轮文档修订不代表已授权或完成上述代码实现。
+T00/T01 已完成；T02 只在 DM-Transport 内移植最小背景与散射闭包，T03 随后验证 rate、靶选择、碰撞后联合分布、能量交换和轨迹统计。T04 并行补齐正权求积、逃逸阈值几何及输出 schema。完整 T03 通过前不进入 T05/T06 的 collision kernel。具体状态、证据和剩余门槛只在 [Task_Plan §8](Task_Plan.md#current-status) 维护。
 
 ---
 
@@ -3526,11 +3436,9 @@ $$
 }
 $$
 
-DaMaSCUS-SUN 的价值不再是负责追踪每一个粒子直到死亡。
+DaMaSCUS-SUN-EVAP 在本项目中的角色是只读素材：
 
-它新的价值应该是：
-
-> **为输运方程提供经过验证的 microscopic scattering physics，并作为 trajectory-level ground truth。**
+> **提供固定的 microscopic scattering 源码事实与已保存的 trajectory-level ground truth。**
 
 而新的 SolarDM-Transport 负责：
 
@@ -3574,7 +3482,7 @@ DaMaSCUS-SUN 的价值不再是负责追踪每一个粒子直到死亡。
 
 ### A.2 两套后端，共用物理契约
 
-`reference_cpu`：CPU、float64、小网格、明确矩阵、直接调用已验证的共享微观物理。保留 `(r,v,mu)` 直接采样路线作为独立对照，不因优化后端出现而删除。
+`reference_cpu`：CPU、float64、小网格、明确矩阵、直接调用 DM-Transport 内已验证的移植物理层。保留 `(r,v,mu)` 直接采样路线作为独立对照，不因优化后端出现而删除。
 
 `optimized_cpu`：经过验证的局域核复用、只读表/私有缓存、MPI/OpenMP、分块或 matrix-free 算符、预条件及 continuation。GPU kernel builder 与 GPU/distributed solver 是可选的两个独立能力，不互为必需前提。
 
@@ -3664,15 +3572,15 @@ P02 的验收包括：`sum_l W=1`、W 非负、c=±1/入射 mu=±1 的端点处�
 
 #### A.5.1 先处理共享可写状态
 
-当前实际依赖的插值查询会更新内部搜索缓存，核素表还存在惰性初始化；详见 [源码依据附录](Proposal.md#code-reference)。因此不能直接把共享 Solar_Model 放进 `omp parallel for`。
+参考源码的插值查询会更新内部搜索缓存，核素表还存在惰性初始化；详见 [源码依据附录](Proposal.md#code-reference)。项目内移植不能把含可写缓存的背景对象直接放进 `omp parallel for`。
 
 先串行完成依赖初始化；worker 使用私有物理/插值缓存或经过验证的只读表，以及私有沉积缓冲。MPI 分配质量点或稳定编号的 state groups，OpenMP 处理节点内样本块；static/dynamic 调度按负载实测选择。合并顺序固定，控制 MPI×OpenMP×BLAS 线程数，避免超额占核。
 
-现代码请求 `MPI_THREAD_FUNNELED`，MPI 只由初始化线程调用；新入口检查运行环境实际提供的线程等级。内核构建和 source 生成分别测强/弱缩放，不保证同一种分块策略适用两者。[Open MPI 文档](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Init_thread.3.html)
+参考代码请求 `MPI_THREAD_FUNNELED`，但 T02 不移植其 MPI 调度。P01 若在本项目引入 MPI，须重新声明并检查实际线程等级；内核构建和 source 生成分别测强/弱缩放，不保证同一种分块策略适用两者。[Open MPI 文档](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Init_thread.3.html)
 
 #### A.5.2 随机地址，而非线程编号
 
-T02/T03 保留 legacy `std::mt19937` 及调用顺序完成提取回归。当前 obscura API 明确要求 `std::mt19937&`；counter engine 无法不改接口就直接替换。优化后端再引入 Philox 等候选，并记录版本和测试向量。counter 方法的原始参考见 [Salmon 等，2011](https://www.thesalmons.org/john/random123/papers/random123sc11.pdf)。
+T02/T03 的项目内移植保留 legacy `std::mt19937` 及调用顺序完成回归。固定 obscura API 明确要求 `std::mt19937&`；counter engine 无法不改接口就直接替换。优化后端再引入 Philox 等候选，并记录版本和测试向量。counter 方法的原始参考见 [Salmon 等，2011](https://www.thesalmons.org/john/random123/papers/random123sc11.pdf)。
 
 建议逻辑地址：
 
@@ -3777,7 +3685,7 @@ reference/debug 可保存 Matrix Market。production 按分块访问、索引宽
 
 正式 `performance_report.json` 至少包含：rate/table、kernel sampling、角沉积、source、assembly/operator setup、precondition、solve、exterior、I/O/传输的时间；samples/s、拒绝次数、GMRES iterations、matvec time、peak RAM/device memory；硬件、线程/MPI 布局、精度、RNG、cache hit、误差预算及关联 validation ID。
 
-比较四项：full trajectory MC、首次 reference transport、首次 optimized transport、缓存后新增 sigma。首次运行包含离线和预条件成本；缓存扫描仍包含 source 重算、失效重建、I/O 和求解。各方案必须达到同一统计和离散误差目标；只报告实测加速，不预先排名各优化的收益。
+比较四项：项目内 full trajectory MC（首个点可含 T01 固定基线）、首次 reference transport、首次 optimized transport、缓存后新增 sigma。首次运行包含离线和预条件成本；缓存扫描仍包含 source 重算、失效重建、I/O 和求解。各方案必须达到同一统计和离散误差目标；只报告实测加速，不预先排名各优化的收益。
 
 ### A.9 实施顺序与失败回退
 
@@ -3808,7 +3716,7 @@ ITMM 作为现有离线/在线与 P05 的参照，不再新增独立实施任务
 
 ## 附录 B：源码事实与复用接口
 
-检查日期：2026-09-14，文档 v2。参考仓库：`DaMaSCUS-SUN-EVAP`。提交：`b5678f5b193aa567ca10715c2a6c764c9e72eec7`；检查时工作树无修改。本附录记录只读源码结论，不是运行测试报告。相关任务编号见 [Task_Plan.md](Task_Plan.md)，优化契约见 [工程与性能设计附录](Proposal.md#performance-design)。
+源码检查日期为 2026-09-14，参考快照固定为 `b5678f5b193aa567ca10715c2a6c764c9e72eec7`；下表链接均指向该只读提交。DaMaSCUS-SUN-EVAP 不接受本项目修改，也不参与后续构建；“规划处理”只描述在 DM-Transport 内的移植或独立实现。本附录记录源码事实；运行证据和任务状态见 [Task_Plan.md](Task_Plan.md)，优化契约见 [工程与性能设计附录](Proposal.md#performance-design)。
 
 ### B.1 文档和源码的优先关系
 
@@ -3821,26 +3729,26 @@ ITMM 作为现有离线/在线与 P05 的参照，不再新增独立实施任务
 
 | 模块 | 源码证据 | 已有能力 | 规划处理 |
 | --- | --- | --- | --- |
-| 太阳背景 | [Solar_Model.hpp:62](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Solar_Model.hpp#L62) | Mass、Temperature、Local_Escape_Speed、核/电子数密度 | T02 包装；由一致逃逸势约定获得 Phi，不另造太阳模型 |
-| 散射率 | [Solar_Model.cpp:386](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L386) | 逐靶 rate、总 rate、直接计算/插值路径 | T02/T03 复用 SD 恒截面支路，验证模型适用范围 |
-| rate 插值 | [Solar_Model.cpp:518](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L518) | 在 MPI_COMM_WORLD 上建立规则 r/v 表，速度上限固定 0.75 自然单位 | T02 分离串行构建与 MPI 调度；T05 新核按实际速度域建表 |
-| 靶选择 | [Simulation_Trajectory.cpp:2460](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2460) | 根据各靶 rate 抽样、预分配核 rate 缓存 | T02 提取；保留零/非法 rate 检查 |
-| 热靶速度 | [Simulation_Trajectory.cpp:2498](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2498) | 碰撞条件下的热靶速度采样 | T02 提取；T03 处理 v=0 支持范围与极限 |
-| 单碰撞 | [Simulation_Trajectory.cpp:2587](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2587) | 选择靶、抽靶速度、调用 obscura 角采样、修改速度 | T02 提取完整流程并显式传 RNG |
-| 引力传播 | [Simulation_Trajectory.hpp:392](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L392) | Free_Particle_Propagator 已有独立类 | 先作为 T07 基准；不要与散射提取同时重写积分器 |
-| 首次捕获即停 | [Simulation_Trajectory.cpp:2698](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2698) | 散射后更新 capture state，capture mode 立即终止 | T10 新增源输出，不重复开发停止逻辑 |
-| 最终事件 | [Simulation_Trajectory.hpp:286](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L286) | Trajectory_Result.final_event 有位置和速度 | Capture mode 下转换成 r/v/mu，并保留连续原始状态 |
-| halo 初态 | [Simulation_Utilities.cpp:292](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Utilities.cpp#L292) | 引力聚焦 impact parameter，按面积抽样入射盘 | T10 与入射率统一归一化及采样权重 |
-| 总入射率 | [Reflection_Spectrum.cpp:66](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Reflection_Spectrum.cpp#L66) | pi R² (rho/m) [mean(u)+vesc² mean(1/u)] | 提取成 source 公共函数，不引入反射谱/KDE 依赖 |
-| 外部轨道 | [Simulation_Trajectory.hpp:84](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L84) | BoundKeplerExteriorArc、返回状态及壳层贡献相关接口 | T12 参数化匹配面、壳边和退化极限 |
-| 径向占据 | [Simulation_Trajectory.hpp:205](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L205) | TrajectoryBincount 保存时间加权统计与生存标记 | T11 复用径向方法，新增速度/角度统计与同源启动 |
-| 现有构建 | [src/CMakeLists.txt:35](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/CMakeLists.txt#L35) | lib_damascus_sun 含物理、轨迹、MPI、快照、数据与参数扫描 | T02 增加可消费共享物理 target；当前并非独立 physics 包 |
+| 太阳背景 | [Solar_Model.hpp:62](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Solar_Model.hpp#L62) | Mass、Temperature、Local_Escape_Speed、核/电子数密度 | T02 在项目内移植最小只读表接口；不带入轨迹状态 |
+| 散射率 | [Solar_Model.cpp:386](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L386) | 逐靶 rate、总 rate、直接计算/插值路径 | T02 移植 SD 恒截面直接 rate 闭包；T03 验证数值与适用范围 |
+| rate 插值 | [Solar_Model.cpp:518](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L518) | 在 MPI_COMM_WORLD 上建立规则 r/v 表，速度上限固定 0.75 自然单位 | T02 不移植 MPI 建表；T05 在项目内按实际速度域另建缓存 |
+| 靶选择 | [Simulation_Trajectory.cpp:2460](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2460) | 根据各靶 rate 抽样、预分配核 rate 缓存 | T02 移植到项目内 physics target，保留零/非法 rate 检查 |
+| 热靶速度 | [Simulation_Trajectory.cpp:2498](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2498) | 碰撞条件下的热靶速度采样 | T02 移植最小 sampler；T03 处理 v=0 支持范围与极限 |
+| 单碰撞 | [Simulation_Trajectory.cpp:2587](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2587) | 选择靶、抽靶速度、调用 obscura 角采样、修改速度 | T02 在项目内移植完整流程并显式接收 RNG；不改 legacy `Scatter` |
+| 引力传播 | [Simulation_Trajectory.hpp:392](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L392) | Free_Particle_Propagator 已有独立类 | 作为 T07 只读算法依据；在本项目独立实现和验证 |
+| 首次捕获即停 | [Simulation_Trajectory.cpp:2698](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2698) | 散射后更新 capture state，capture mode 立即终止 | T10 在本项目移植判据并新增源输出 |
+| 最终事件 | [Simulation_Trajectory.hpp:286](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L286) | Trajectory_Result.final_event 有位置和速度 | T10 在本项目转换成 r/v/mu，并保留连续原始状态 |
+| halo 初态 | [Simulation_Utilities.cpp:292](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Utilities.cpp#L292) | 引力聚焦 impact parameter，按面积抽样入射盘 | T10 在本项目移植并与入射率统一归一化及采样权重 |
+| 总入射率 | [Reflection_Spectrum.cpp:66](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Reflection_Spectrum.cpp#L66) | pi R² (rho/m) [mean(u)+vesc² mean(1/u)] | T10 在本项目移植成 source 公共函数，不带入反射谱/KDE 依赖 |
+| 外部轨道 | [Simulation_Trajectory.hpp:84](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L84) | BoundKeplerExteriorArc、返回状态及壳层贡献相关接口 | T12 在本项目移植思路并参数化匹配面、壳边和退化极限 |
+| 径向占据 | [Simulation_Trajectory.hpp:205](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L205) | TrajectoryBincount 保存时间加权统计与生存标记 | T11 在本项目移植径向方法，新增速度/角度统计与同源启动 |
+| 参考构建 | [src/CMakeLists.txt:35](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/CMakeLists.txt#L35) | lib_damascus_sun 含物理、轨迹、MPI、快照、数据与参数扫描 | 不接入本项目构建；T02 在 DM-Transport 新建最小串行 target |
 
 ### B.3 与提案不同、需要变更任务描述的地方
 
 #### B.3.1 不存在的文件与能力
 
-当前源码没有 `Scattering_Rates.cpp`，也没有提案式独立 `Sample_Momentum_Transfer()`。实际角采样由 obscura 的 DM 类完成；`Scatter()` 只改变速度，靶选择/靶速度/出射速度构造在 simulator 内部。
+参考源码没有 `Scattering_Rates.cpp`，也没有提案式独立 `Sample_Momentum_Transfer()`。实际角采样由 obscura 的 DM 类完成；靶选择、靶速度和出射速度构造都在 `Simulation_Trajectory.cpp` 内部，T02 必须在项目内划出最小边界。
 
 当前 rate 插值表是重建并缓存数组，未发现提案所称“同质量更改截面时自动 rescale”的接口或模型签名失效保护。截面分离仍是首版 SD 恒截面模型可验证的物理性质，但 T05 需要新建、测试并记录缩放缓存规则。
 
@@ -3884,25 +3792,25 @@ ITMM 作为现有离线/在线与 P05 的参照，不再新增独立实施任务
 
 T11/T15 必须按首次捕获后的全部有效样本与相同终点构造 occupation；不能仅用完整蒸发子样本均值来归一化所有捕获粒子。可以复用 `residence_jackknife_blocks.tsv` 的块级误差思想，但不能假定旧每列字段就等价于新统计量。
 
-### B.4 现有测试能够提供什么
+### B.4 可移植的验证逻辑
 
-| 已有测试 | 可以复用的验证 | 新项目仍缺的部分 |
+| 只读测试源码 | 可移植的验证逻辑 | 新项目仍缺的部分 |
 | --- | --- | --- |
-| [test_Solar_Model.cpp](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/tests/test_Solar_Model.cpp) | 背景、各靶 rate、插值节点/SD 路径 | 共享接口前后等价、模型签名与截面缩放 |
+| [test_Solar_Model.cpp](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/tests/test_Solar_Model.cpp) | 背景、各靶 rate、插值节点/SD 路径 | 项目内移植 parity、模型签名与截面缩放 |
 | [test_Physics_Validation.cpp:251](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/tests/test_Physics_Validation.cpp#L251) | Kepler 收敛、壳层驻留、太阳背景、入射面积律、角 CDF、零速平均速率 | 完整单碰撞联合分布、transport 数值误差及稀有尾 |
 | [test_Simulation_Trajectory.cpp](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/tests/test_Simulation_Trajectory.cpp) | 轨迹分类、守恒径向统计与多种数值边界 | 已捕获初态入口、时间加权相空间占据 |
 | [test_Kepler_Return.cpp](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/tests/test_Kepler_Return.cpp) | 返回几何与特定退化输入拒绝 | 任意壳边/匹配面、径向与近抛物极限的输运接口 |
 | [test_Data_Generation.cpp](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/tests/test_Data_Generation.cpp) | capture 分母、截断、输出契约/错误路径 | 绝对 source 单位、原始首捕获样本与 source-conditioned 误差 |
 | [validation/physics_validation.py](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/validation/physics_validation.py) | 速率插值/多种子运行矩阵与报告框架 | 新 schema、绝对归一化、统一边界、完整速度分布和核 MC 误差 |
 
-旧代码审查后的源码已增加相关修复/测试，例如当前存在 quickstart 配置、输出失败测试和 Kepler 返回测试。T01 需要重新运行当前测试获得基线，不能引用旧报告的测试总数/通过结果代替执行。
+旧代码审查后的固定参考已包含 quickstart 配置、输出失败测试和 Kepler 返回测试。T01 已记录当时的实际执行结果；后续开发只消费已保存基线。若未来需要更新参考版本，先由用户单独处理素材库并提供新的固定提交与产物，本项目不在其中重跑构建。
 
 ### B.5 对开发顺序的直接影响
 
 1. 把提案“重写 capture 停止逻辑”改为“输出首次捕获样本并补绝对率”。
 2. 在真正的 transport–MC 对比前新增“从已捕获状态启动的受控 MC 入口”。
 3. 外域策略、统计终点和源归一化在 T00 固定；ExteriorOrbit 前移为边界构建依赖。
-4. 独立物理提取保持小范围；先不搬动整个旧代码树，也不复刻 MPI/snapshot 调度。
+4. 项目内物理移植保持最小闭包；不搬动整个旧代码树，也不复刻 MPI/snapshot 调度。
 5. 单碰撞 parity 与独立物理验证并列；一般相互作用问题不能被 parity 掩盖。
 6. 有限年龄必须使用包含外部飞行时间的模型；高 opacity 必须在已验证 kinetic 基础上另做扩散极限验证。
 
@@ -3912,11 +3820,11 @@ T11/T15 必须按首次捕获后的全部有效样本与相同终点构造 occup
 | --- | --- | --- |
 | libphysica 插值查询:168（参考构建目录内 `patched_dependencies/libphysica/Numerics.cpp:168`） | 查询更新 `correlated_calls`、`jLast` 搜索缓存 | 多线程共享同一插值对象存在可写状态竞争风险；P01 使用线程私有对象/缓存或只读表 |
 | obscura 核素表:176（参考构建目录内 `_deps/obscura-src/src/Target_Nucleus.cpp:176`） | 全局 `all_nuclei` 在空表时惰性赋值 | P01 在并行区外串行初始化；不能只给 RNG 加锁就认为线程安全 |
-| obscura 角采样 API:87（参考构建目录内 `_deps/obscura-src/include/obscura/DM_Particle.hpp:87`） | 形参明确为 `std::mt19937&` | Philox 不能直接作为替代参数；T02 保留旧接口，优化后端另做抽样/接口验证 |
-| [MPI 初始化:23](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/main.cpp#L23) | 请求 `MPI_THREAD_FUNNELED` | MPI 调用保留在初始化线程，新并行入口还需检查实际提供等级 |
-| [rate MPI 建表:532](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L532) | 直接操作 `MPI_COMM_WORLD` | 不在 OpenMP worker 中调用旧并行建表函数；先分离离线构建与只读使用 |
+| obscura 角采样 API:87（参考构建目录内 `_deps/obscura-src/include/obscura/DM_Particle.hpp:87`） | 形参明确为 `std::mt19937&` | Philox 不能直接作为替代参数；T02 项目内移植保留旧接口，优化后端另做抽样/接口验证 |
+| [MPI 初始化:23](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/main.cpp#L23) | 请求 `MPI_THREAD_FUNNELED` | P01 若在 DM-Transport 新增 MPI，调用限初始化线程并检查实际提供等级 |
+| [rate MPI 建表:532](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L532) | 参考实现直接操作 `MPI_COMM_WORLD` | T02 不移植；P01 的离线构建与只读使用在本项目独立实现 |
 
-依赖文件位置相对于参考构建目录，不作为公开下载链接；T01 要保存依赖 commit、补丁及代码指纹，并重新定位证据。以上为源码中可写状态和接口的检查，未执行线程竞争测试，也不代表已存在 OpenMP 后端。
+依赖文件位置相对于参考构建目录，不作为公开下载链接；T01 已保存依赖 commit、补丁及代码指纹，依赖升级时必须重新定位证据。以上为源码中可写状态和接口的检查，未执行线程竞争测试，也不代表已存在 OpenMP 后端。
 
 ### B.7 对补充建议的技术澄清
 

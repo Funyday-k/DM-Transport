@@ -1,8 +1,8 @@
 # SolarDM-Transport 开发任务计划
 
-维护版本：2026-09-15。依据：[Proposal.md](Proposal.md)、DaMaSCUS-SUN-EVAP 当前源码及用户补充建议。具体源码定位见 [源码依据附录](Proposal.md#code-reference)；当前设计决策、局域核公式和后端契约见 [工程与性能设计附录](Proposal.md#performance-design)。
+维护版本：2026-09-15。依据：[Proposal.md](Proposal.md)、DaMaSCUS-SUN-EVAP 只读固定提交及用户补充建议。具体源码定位见 [源码依据附录](Proposal.md#code-reference)；当前设计决策、局域核公式和后端契约见 [工程与性能设计附录](Proposal.md#performance-design)。
 
-已进入初步实施，T00/T01/T04/P00 正在推进，其余任务为 `pending`；当前状态集中于 §8。表中的物理验收数值仍是门槛，不是已取得的结果。
+已进入初步实施，T00/T01 已完成，T04/P00 正在推进，T02/T03 及其余任务为 `pending`；当前状态集中于 §8。表中的物理验收数值仍是门槛，不是已取得的结果。
 
 任务体系为 T00–T20、P00–P09，科学阶段为 G0–G6。G4 仍指有限年龄，不能被 CPU/GPU 里程碑替换。Proposal 已同步修正源码事实，原稿存于只读 [v1 存档](archive/Proposal_2026-09-14_v1.md)。
 
@@ -16,7 +16,7 @@
 
 | 阶段 | 交付结果 | 完成条件 |
 | --- | --- | --- |
-| G0：可信物理底座 | 固定基线、共享物理模块、旧轨迹作为客户端 | T00–T03 通过；模型范围和随机数兼容性明确 |
+| G0：可信物理底座 | 固定基线、项目内移植物理模块、旧轨迹作为只读参照 | T00–T03 通过；来源、模型范围和随机数兼容性明确 |
 | G1：局域碰撞原型 | 网格、可缓存碰撞生成元、热浴验证 | T04–T06 通过 |
 | G2：人工源输运 | 引力 streaming、边界、稳态求解 | T07–T09 通过；粒子账目闭合且假蒸发低于预设尾部误差预算 |
 | G3：V1 科学闭环 | 真实源、轨迹对照、内外绝对密度及收敛报告 | T10–T16 通过；至少一个完整 overlap benchmark |
@@ -32,7 +32,7 @@ V1 可以交付经过验证的数学稳态，并在总平均驻留有限、时�
 
 首个基准建议采用提案的 `m_chi=0.1 GeV`、SD 质子耦合，显式设置 `DM_light=true`、中子耦合为零、电子截面为零。MVP 先使用直接散射率（旧配置 `interpolation_points=0`），后续独立验证插值。保持 DaMaSCUS 的太阳同位素列表；**质子耦合不等于只保留氢靶**。若研究需要 hydrogen-only，必须作为另一配置在 MC 和 transport 两边同步设置。
 
-候选截面为 `1e-36`、`1e-34 cm²`，通过 T01 小样本计时和完整事件比例选择首点，不承诺某个截面一定可跑完。随后再选光学薄、中间区及 MC 仍可承受的最高截面点。
+T01 已比较 `1e-36`、`1e-34 cm²` 的固定种子小样本，并选定 `1e-34 cm²` 作为 T02/T03 工程回归点。该选择只建立可重复的 legacy reference，不表示捕获率、占据数或寿命已经科学收敛。后续仍须另选光学薄、中间区及 MC 可承受的最高截面点。
 
 物理适配器内部沿用 libphysica 自然单位；跨语言文件显式使用 `r_cm`、`v_cm_s`、`rate_s_inv`、`source_particles_s`、`mass_GeV`、`kBT_eV`。势和比能量采用 `cm²/s²`。旧代码的 `E_capture_eV` 是粒子能量，不可直接当作比能量 `v²/2+Phi`。
 
@@ -74,14 +74,14 @@ V1 可以交付经过验证的数学稳态，并在总平均驻留有限、时�
 
 ### 2.4 捕获源与时间定义
 
-Capture mode 已实现首次散射后束缚即停。T10 补的是捕获状态输出与绝对率：
+只读参考提交的 Capture mode 已实现首次散射后束缚即停。T10 在 DM-Transport 内移植该行为并补捕获状态输出与绝对率：
 
 \[
 C_\alpha=R_{in}p_{cap}\eta_\alpha,
 \qquad \sum_\alpha\eta_\alpha=1.
 \]
 
-`R_in` 复用并独立检查 `DM_Entering_Rate` 的引力聚焦入射通量，与入射样本分布保持一致。旧输出 `capture_rate_raw/valid` 是概率；`Captured particle rate [1/s]` 是模拟墙钟吞吐量，都不能直接当作 `C_total`。
+`R_in` 在本项目移植并独立检查参考 `DM_Entering_Rate` 的引力聚焦入射通量公式，与入射样本分布保持一致。旧输出 `capture_rate_raw/valid` 是概率；`Captured particle rate [1/s]` 是模拟墙钟吞吐量，都不能直接当作 `C_total`。
 
 优先为源生成器使用固定尝试数，并保存捕获、未捕获、未决和失败计数。对等权且完整分类的样本，可直接用 `C_alpha = R_in * n_cap,alpha / n_attempts`。保留 raw/valid 口径；不能以删除未决样本再归一化掩盖选择偏差。若改变为加权采样，须同时保存权重和有效样本量。
 
@@ -99,18 +99,20 @@ T17 必须显式加入外部轨道相位/飞行段，或使用延迟返回方程
 
 ## 3. 仓库组织与复用方案
 
-保留 DaMaSCUS-SUN-EVAP 为微观物理和基准轨迹的来源，本项目负责网格、算符、求解与科学输出。先在 DaMaSCUS 中做小范围接口提取，让旧轨迹成为共享模块客户端，不复制散射公式，也不第一轮重排整个旧仓库。
+DaMaSCUS-SUN-EVAP 只作为微观物理和基准轨迹的只读素材库，本项目负责全部新增实现、编译、算符、求解与科学输出。禁止修改或在该参考仓库中编译；T02 只把经审计的最小太阳背景和散射代码移植到本项目，并记录来源提交、文件哈希、许可证和有意差异。
 
-当前旧项目只有混合静态库 `lib_damascus_sun`，不是已可安装的独立 `damascus_physics` 包。T02 要补导出/集成契约；本地可以用显式源码路径和独立 build 目录连接。`find_package` 仅在包配置真正存在后使用，不能把它当作当前可用能力。
+参考仓库当前只有混合静态库 `lib_damascus_sun`，不能作为本项目的可安装 physics package。DM-Transport 不通过 `add_subdirectory`、外部源码路径或参考仓库 build 产物接入它；移植后的代码形成项目内串行 target，并以 T01 保存的固定输出作为 parity 依据。
 
 ```text
-DaMaSCUS-SUN-EVAP（受控重构）
-  SolarBackground + ScatteringPhysics + 自然单位/模型适配
-       ├── 原 Trajectory_Simulator（回归与 benchmark）
-       └── DM-Transport/Code/（共享同一物理实现）
+DaMaSCUS-SUN-EVAP（严格只读素材）
+  固定源码提交 + 已保存的 legacy 基线输出
+                         │ 审计后移植最小代码
+                         ▼
 
-DM-Transport/（规划结构）
+DM-Transport/（唯一开发与构建仓库）
   CMakeLists.txt
+  Code/include/transport/physics/ # 项目内太阳背景与散射接口
+  Code/src/physics/              # 带来源记录的移植实现
   Code/include/transport/   # 网格、算符、边界、源与外域接口
   Code/src/                # C++ 构建算符和源
   Code/apps/               # build_kernel / build_source / benchmark_mc
@@ -122,19 +124,19 @@ DM-Transport/（规划结构）
   Output/Figure/
 ```
 
-C++ 先沿用现有 C++14/obscura/libphysica。Python 原型采用 SciPy 稀疏 LU 作小网格参照，GMRES/块预条件作扩展路线；同时记录未预条件残差及退出状态，不能仅看迭代器的局部残差。[SciPy GMRES 文档](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.gmres.html)
+C++ 项目内实现先沿用 C++14；T02 核实 obscura/libphysica 的许可证与最小依赖移植范围。Python 原型采用 SciPy 稀疏 LU 作小网格参照，GMRES/块预条件作扩展路线；同时记录未预条件残差及退出状态，不能仅看迭代器的局部残差。[SciPy GMRES 文档](https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.linalg.gmres.html)
 
 ### 3.1 后端与可复用资产
 
-保留 `reference_cpu`：double 精度、直接调用共享物理、小网格显式矩阵及完整 `(r,v,mu)` 抽样。新增 `optimized_cpu`：通过验证后使用局域 `(r,v)->(v',c_lab)` 联合核、解析方位角沉积、MPI/OpenMP、分块算符与预条件；GPU kernel/solver 后端由实测成本和硬件条件决定，不进入 T02/T03。
+保留 `reference_cpu`：double 精度、直接调用项目内移植物理层、小网格显式矩阵及完整 `(r,v,mu)` 抽样。新增 `optimized_cpu`：通过验证后使用局域 `(r,v)->(v',c_lab)` 联合核、解析方位角沉积、MPI/OpenMP、分块算符与预条件；GPU kernel/solver 后端由实测成本和硬件条件决定，不进入 T02/T03。
 
 局域核复用依赖热靶环境及散射律的旋转协变，不假设 DM 分布已各向同性，也不把 c_lab 当作旧 CM 散射角。P02 对入射 FV 单元做一致的角度平均；角积分减少分箱方差，但速度尾仍需独立采样。参考路线一直保留，优化任务不阻塞其科学验证。
 
 离线保存固定模型/网格/边界下的 Gamma0、局域联合核、沉积几何、streaming 和外域停留模板；在线每个 sigma 重算 C、应用算符缩放、更新预条件、求解及重建观测量。source 及预条件成本不能省略；网格、边界或相互作用形状变化会使相应缓存失效。
 
-### 3.2 现在预留、后续实现的契约
+### 3.2 移植与后续预留的契约
 
-- T02 的碰撞主接口输入/输出向量速度并显式接收 legacy RNG；优化后端另实现逻辑随机地址，不在提取时强换 obscura 的 `std::mt19937&` 接口。
+- T02 的项目内碰撞主接口采用输入/输出向量速度并显式接收与 legacy 相容的 RNG；移植时不改变抽样顺序。优化后端另实现逻辑随机地址，不在 T02 同时更换随机映射。
 - T04/T05 的 schema 区分直接三维行核、局域联合样本/表、展开块和重要性加权生成元，保存转换和误差来源。
 - T09 同时定义 `ApplyQT`、`ApplyQ`、`ApplyA=-ApplyQT`；reference 可以先由显式矩阵实现，P05 再替换内部存储。
 - T16 按同一误差预算比较 first-run/cached-run，独立记录 source、角沉积、I/O、预条件和 GPU 传输成本。详细公式及退化处理不在各任务重复，统一见性能设计。
@@ -146,8 +148,8 @@ C++ 先沿用现有 C++14/obscura/libphysica。Python 原型采用 SciPy 稀疏 
 | ID | 任务与交付物 | 依赖 | 规模 |
 | --- | --- | --- | --- |
 | T00 | 固定模型、单位、矩阵方向、边界、时间与误差契约；记录设计决策 | — | M |
-| T01 | 保存旧提交/依赖/太阳表指纹，运行基线测试和固定种子小样本；选择首个基准点 | T00 | M |
-| T02 | 提取 SolarBackground、ScatteringPhysics；旧轨迹调用共享接口；构建集成 | T01 | L |
+| T01 | 登记旧提交/依赖/太阳表指纹与已保存的基线测试/固定种子小样本；选择首个基准点 | T00 | M |
+| T02 | 从只读参考提交移植最小 SolarBackground/ScatteringPhysics；建立项目内无 MPI 串行 target、来源清单和固定输出 parity | T01 | L |
 | T03 | rate/单碰撞/轨迹回归，已知物理适用范围及零速极限测试 | T02 | M |
 | T04 | FV 网格、体积/求积权重、阈值几何、索引、源投影及输出 schema | T00 | M |
 | T05 | CollisionKernelBuilder、完整单元平均、逻辑 RNG、核缓存与截面缩放 | T03,T04 | L |
@@ -184,7 +186,7 @@ C++ 先沿用现有 C++14/obscura/libphysica。Python 原型采用 SciPy 稀疏 
 | P08 | 按 profile 选择 PETSc 分布式/可选 GPU solver | T16,P05,P06 | 分量算符和域分解一致；迭代、通信、内存及最终误差通过；不要求 P07 先完成 |
 | P09 | AP、确定性 hybrid、DDMC 的自由度/事件数及总成本评估 | T18 | 相同误差下比较所选候选；保留共享闭合的局限，高截面发布仍通过 T19 |
 
-可并行关系：T04 可与基线/物理提取并行；通过 T03 后，碰撞核、streaming 原型、capture source、MC benchmark 和 exterior 模块可以分工。T07 完整外域多周期门在 T12 后收口；独立轨道参照不能复用待测 streaming。T17 与 T18 可并行，但 T19 发布科学结果前都必须通过。
+可并行关系：T04 可与项目内物理移植并行；通过 T03 后，碰撞核、streaming 原型、capture source、项目内 MC benchmark 和 exterior 模块可以分工。T07 完整外域多周期门在 T12 后收口；独立轨道参照不能复用待测 streaming。T17 与 T18 可并行，但 T19 发布科学结果前都必须通过。
 
 P05 按基础算符/伴随接口、块预条件和粗校正分段验收；P04 的 P05 依赖只要求前向/伴随能可靠求解，不等待 DSA 扩展完成。
 
@@ -195,7 +197,7 @@ P00 随基线启动，T06 后优先 P02 和 CPU 并行；GPU 不占用物理提�
 ```mermaid
 flowchart LR
   A[T00 约定] --> B[T01 基线]
-  B --> C[T02-T03 共享物理与回归]
+  B --> C[T02-T03 项目内物理移植与回归]
   A --> D[T04 网格和格式]
   C --> E[T05-T06 碰撞核]
   D --> E
@@ -222,9 +224,9 @@ flowchart LR
 ### T00–T03：先建立可解释的基线
 
 - T00：为模型、单位、源/终点、角度离散、外域策略各写明选择；后续修订同步现行 Proposal，摘要记入 CHANGELOG；保持 v1 存档不变，不新增逐轮备份。明确球对称输出不包含相对太阳运动方向的角各向异性信号。
-- T01：保存 DaMaSCUS commit、依赖 commit、补丁开关、太阳表 SHA256、编译器/MPI/配置/种子/进程数；执行现有 CTest 和最小 capture/完整轨迹案例，记录真实 pass/fail。旧运行的固定种子只承诺相同进程数/环境下比较。
-- T02：碰撞接口显式接收 RNG 和模型，不持有轨迹调度/快照状态；暴露 `rate`、碰撞后速度、靶种类及必要诊断。太阳表读取与散射率 MPI 预计算分离，提供串行入口。验收独立 consumer 只链接物理 target 即可查询背景、rate 和单碰撞；静态库即可，不要求动态库。先提取已有 propagator 接口，避免同时重写 RK45。
-- T03：纯重构尽量保持抽样顺序、同输入的散射率及固定种子结果；若物理修正改变随机映射，另列修正基线并做分布检验，不能强制保留已知错误。覆盖 `P(v_out)`、方向分布、平均能量交换、靶选择概率和 rate；由实际速度差计算动量转移，避免误用旧散射角。
+- T01：已保存 DaMaSCUS commit、依赖 commit、补丁开关、太阳表 SHA256、编译器/MPI/配置/种子/进程数，以及当时的 CTest、最小 capture 和完整轨迹结果。后续只消费这些固定产物；不在参考仓库重跑。旧运行的固定种子只承诺相同进程数/环境下比较。
+- T02：碰撞接口显式接收 RNG 和模型，不持有轨迹调度/快照状态；暴露 `rate`、碰撞后速度、靶种类及必要诊断。只移植串行所需太阳表读取与直接 rate，不带入 MPI、trajectory、snapshot 或参数扫描。验收项目内 consumer 只链接 physics target 即可查询背景、rate 和单碰撞；来源提交/哈希/许可证可追溯，固定输入对 T01 输出相容。传播器继续作为只读源码依据，不在 T02 移植或重写 RK45。
+- T03：直接移植尽量保持抽样顺序、同输入的散射率及固定种子结果；若物理修正改变随机映射，另列修正基线并做分布检验，不能强制保留已知错误。覆盖 `P(v_out)`、方向分布、平均能量交换、靶选择概率和 rate；由实际速度差计算动量转移，避免误用旧散射角。
 
 单散射开发样本可从 `1e4–1e5` 开始，阶段门使用提案建议的约 `1e6` 次/选定状态组或等效统计精度。预先规定分布检验/多重比较规则，并报告均值、区间和效应大小，不以单个 p 值或“看起来相同”验收。
 
@@ -243,9 +245,9 @@ flowchart LR
 
 ### T10–T16：绝对归一化与完整验证
 
-- T10：每个 source 文件含原始首次捕获状态/权重、入射率、attempted/classified/unresolved 计数和配置；核对 `sum C_alpha = C_total`。源误差与核误差分别估计；捕获概率和首次捕获分布来自同批样本时保留其相关性。现 capture mode 与普通模式采用不同的光学深度推进精度路径，首次捕获分布需做两模式的统计/容差收敛比较，不预设相同 seed 就逐事件一致。
+- T10：每个 source 文件含原始首次捕获状态/权重、入射率、attempted/classified/unresolved 计数和配置；核对 `sum C_alpha = C_total`。源误差与核误差分别估计；捕获概率和首次捕获分布来自同批样本时保留其相关性。参考 capture mode 与普通模式采用不同的光学深度推进精度路径；在本项目移植的两模式需做统计/容差收敛比较，不预设相同 seed 就逐事件一致。
 - T10：所属 FV 单元计数作为守恒参考；比较加密网格与可选 CIC/线性投影对绝对密度及尾部的影响。可选投影必须非负、总权重不变且尊重首次捕获的负能量支持，不跨阈值平滑成虚假源；未使用 CIC 可记 `not_selected`，源投影收敛本身仍必须验收。
-- T11：旧 `Simulate` 假定 halo 未捕获初态，不能直接传入负能量事件。新增显式已捕获初始化，正确设置捕获标记、时间零点、bincount anchor 和随机状态。对同一 source 比较原始连续初态与按声明的 FV 单元重构采样的初态：常值 f 闭合按 `J dx / DeltaGamma` 取样，阈值切割后使用相应子域体积。格心初态只用于格心原型对照，不能与完整 FV 平均混用后宣称隔离了投影误差。
+- T11：参考 `Simulate` 假定 halo 未捕获初态，不能直接传入负能量事件。本项目新增显式已捕获初始化，正确设置捕获标记、时间零点、bincount anchor 和随机状态。对同一 source 比较原始连续初态与按声明的 FV 单元重构采样的初态：常值 f 闭合按 `J dx / DeltaGamma` 取样，阈值切割后使用相应子域体积。格心初态只用于格心原型对照，不能与完整 FV 平均混用后宣称隔离了投影误差。
 - T11：新增时间加权 `(r,v,mu)` / speed 统计。当前径向 `dt` 和 `v²dt` 只能验证径向占据及一个速度矩，不能重建完整速度分布。记录所有有效终点；完整蒸发子样本不可代表所有捕获粒子。
 - T11：为可选 WE 分支定义完整续跑状态、权重、父子谱系与独立未来 RNG；普通 MC 的暂停/续跑先对照原完整路径。外轨道年龄、真实物理时间及统计锚点不能在复制时丢失；此接口不要求首轮即实现 WE。
 - T12：复用 Kepler 几何及壳层积分思想，移除固定网格/固定匹配面的接口限制。检查径向轨道、近切向出射、远日点落在壳边、`E→0−`、超域移除的单程积分；用独立积分/解析轨道验证，不能只对照两个共用同一函数的程序。
@@ -281,7 +283,7 @@ P04 以粗前向/伴随 pilot 决定下一批预算或有可计算密度的 prop
 
 ## 7. 文件与结果契约
 
-原型采用 C++ 输出 Matrix Market/结构化文本加 JSON metadata，Python 转 NPZ/HDF5；避免第一轮给旧项目同时引入大型新 I/O 依赖。production 保存分量/块/局域核的二进制资产，按 profile 选择 HDF5、CSR 或 PETSc binary；`nnz≈1e7` 触发 I/O 预算检查，不作为普适禁止阈值。matrix-free 后端不被强制导出完整 Q。所有文件包含 schema version，读取器按字段/版本解析，不按模糊列数猜测。
+原型采用 C++ 输出 Matrix Market/结构化文本加 JSON metadata，Python 转 NPZ/HDF5；第一轮不引入大型新 I/O 依赖。production 保存分量/块/局域核的二进制资产，按 profile 选择 HDF5、CSR 或 PETSc binary；`nnz≈1e7` 触发 I/O 预算检查，不作为普适禁止阈值。matrix-free 后端不被强制导出完整 Q。所有文件包含 schema version，读取器按字段/版本解析，不按模糊列数猜测。
 
 | 产物 | 必需内容 |
 | --- | --- |
@@ -300,25 +302,25 @@ P04 以粗前向/伴随 pilot 决定下一批预算或有可计算密度的 prop
 
 本地 Git 已建立；数据、构建目录和运行报告由 `.gitignore` 排除，配置、实现、测试及固定文档进入版本控制。运行报告记录实际源码/构建/数据指纹，不以源码 HEAD 代替二进制来源。
 
+<a id="current-status"></a>
+
 ## 8. 当前实施状态与下一步
 
 | 任务 | 状态 | 已落实与剩余范围 |
 | --- | --- | --- |
-| T00 | in_progress | 初始模型/单位/边界/源/代数预算写入 mvp.json；假蒸发、尾部及负占据容差仍有显式待定门槛 |
-| T01 | in_progress | Git/依赖/数据/构建指纹、旧 CTest 和四个候选小案例已记录；1e-34 cm² 作为后续接口回归首选，仍需扩大统计与建立可用的科学基准 |
-| T04 | in_progress | C++14 网格 faces 校验、mu 最快索引和稳定体积积分已通过几何测试；求积、阈值几何、源投影与跨语言网格文件尚未实现 |
+| T00 | completed | 模型、单位、状态、边界、源、代数方向和已知容差写入 mvp.json；三个未来预算分别由 T06/T07/T09 负责，并注明必须设置的验收门 |
+| T01 | completed | Git/依赖/数据/构建指纹、旧 CTest 和四个固定种子小案例已记录；选择 1e-34 cm² 作为接口回归点。它是可复现 legacy reference，不是收敛的科学 benchmark |
+| T02 | pending | 参考仓库已恢复并冻结在只读提交；待在本项目移植最小背景/散射实现，建立串行 target、来源追踪及对 T01 固定输出的 parity |
+| T03 | pending | 待 T02 后在本项目验证 rate、靶选择、碰撞后联合分布、能量交换、零速约定及轨迹级统计；不得以参考仓库内重构充当验收 |
+| T04 | in_progress | C++14 网格已提供只读 faces、bounds、闭域定位、mu 最快索引和稳定相空间测度；分片常数源投影保持 particles/s 守恒。求积、逃逸阈值几何和跨语言输出 schema 尚未实现 |
 | P00 | in_progress | 基线工具已输出分命令和分案例墙钟时间；峰值内存、核构建和求解等未测字段为 null |
 
-`mvp.json` 是当前可运行参数的唯一来源，文档保留设计理由和验收条件。未确定预算必须先补充定义再启用对应门，不以默认值或零代替。
+`mvp.json` 是当前可运行参数的唯一来源，文档保留设计理由和验收条件。未确定预算必须由登记的 owner task 在对应验收前补充定义，不以默认值或零代替；这些未来门不妨碍 T00 的契约冻结完成，也不表示对应物理门已经通过。
 
-当前验证证据（2026-09-15）：本项目三个 CTest 通过，包含网格测试、四项项目契约检查和五项基线工具回归。旧源码保持 clean，构建版本从 `543660f-dirty` 刷新为 `b5678f5`；旧 21 项测试中 17 项首次通过，4 项 MPI 因沙箱套接字限制失败，获批重试后通过，未把两次执行合写成一次全通过。基线验证报告（本地生成：`Output/Result/baseline/20260915-initial/validation_report.json`）
+当前验证证据（2026-09-15）：本项目默认构建四个 CTest 通过。初始只读参考的构建版本从 `543660f-dirty` 刷新为 `b5678f5`；旧 21 项测试中 17 项首次通过，4 项 MPI 因沙箱套接字限制失败，获批重试后通过，未把两次执行合写成一次全通过。该次 T01 基线已经保存；此后不再修改或编译参考仓库。基线验证报告（本地生成：`Output/Result/baseline/20260915-initial/validation_report.json`）
 
 两个截面各运行 Capture/普通模式 16 次尝试：`1e-36 cm²` 均未捕获；`1e-34 cm²` 分别捕获 8/6 个，普通模式 6 个均完整蒸发，四案未报告数值失败或计算截断。实际耦合、质量/截面与二进制版本通过日志核验。此样本只支持初步运行回归，不证明概率、占据数或寿命收敛；G0/G1 尚未完成。运行来源（本地生成：`Output/Result/baseline/20260915-initial/run_manifest.json`）、计时报告（本地生成：`Output/Result/baseline/20260915-initial/performance_report.json`）
 
-本轮先落实 T00/T01 与 P00，T04 独立并行；基线确认后再提取 T02 共享物理并进行 T03 回归。近期完整目标延伸到 T00–T06，随后开展局域核 P02 和 CPU 并行 P01。GPU 不进入这一轮。建议先拆成三份可审查改动：
-
-1. **基线与约定**：记录模型、边界、时间、依赖版本，运行小基准，保存 baseline manifest 和关键输出。
-2. **共享物理提取**：从现有 Solar_Model/Trajectory_Simulator 提取微观接口，让旧轨迹调用同一实现；构建/单位/数据路径一并验证。
-3. **单碰撞与轨迹回归**：比较 rate、靶选择、碰撞后分布和相同配置的轨迹；将 before/after 数据写入 `validation_report.json` 等运行产物，结论及适用范围更新本任务表和 Proposal。
+当前关键路径是只在 DM-Transport 内完成 T02 移植，再开展 T03；T04 同期只补正权求积、逃逸阈值几何和稳定 schema。T03 未通过前不启动 T05 碰撞核，GPU 仍不进入这一轮。随后按 T05/T06 建立 reference collision kernel 与热浴验收，再依据 profile 开始 P02 和 P01。
 
 通过 G0 后，才把这些接口用于真实碰撞核。V1 的第一张科学验证图是带误差带的 **MC 与 transport 绝对径向密度**，随后是外部密度、`N/C` 与同口径驻留时间、以及完整的误差和成本报告。

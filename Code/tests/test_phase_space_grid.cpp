@@ -8,11 +8,23 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
 
 using transport::PhaseSpaceGrid;
+
+static_assert(std::is_same<decltype(std::declval<const PhaseSpaceGrid&>().r_faces()),
+                           const std::vector<double>&>::value,
+              "radial faces must be accessible without mutation or copying");
+static_assert(std::is_same<decltype(std::declval<const PhaseSpaceGrid&>().v_faces()),
+                           const std::vector<double>&>::value,
+              "speed faces must be accessible without mutation or copying");
+static_assert(std::is_same<decltype(std::declval<const PhaseSpaceGrid&>().mu_faces()),
+                           const std::vector<double>&>::value,
+              "angular faces must be accessible without mutation or copying");
 
 void require(bool condition, const std::string& message) {
     if (!condition) {
@@ -46,6 +58,9 @@ void test_volume_and_indices() {
     const PhaseSpaceGrid grid(r_cm, v_cm_s, mu);
     require(grid.shape() == PhaseSpaceGrid::Index{{3, 2, 4}}, "shape");
     require(grid.size() == 24, "size");
+    require(grid.r_faces() == r_cm, "radial faces retain cm coordinates");
+    require(grid.v_faces() == v_cm_s, "speed faces retain cm/s coordinates");
+    require(grid.mu_faces() == mu, "angular faces retain mu coordinates");
 
     const double pi = std::acos(-1.0);
     double total_volume = 0.0;
@@ -71,6 +86,19 @@ void test_volume_and_indices() {
                 require_close(volume, expected, "nonuniform cell volume");
                 require_close(grid.cell_volume(flat), volume,
                               "flat volume agrees");
+                require_close(grid.cell_phase_measure(ir, iv, imu), expected,
+                              "phase measure agrees with shell reference");
+                require_close(grid.cell_phase_measure(flat), expected,
+                              "flat phase measure agrees with shell reference");
+                const auto bounds = grid.cell_bounds(ir, iv, imu);
+                const auto flat_bounds = grid.cell_bounds(flat);
+                require(bounds.r_cm == std::array<double, 2>{{r_cm[ir], r_cm[ir + 1]}} &&
+                        bounds.v_cm_s == std::array<double, 2>{{v_cm_s[iv], v_cm_s[iv + 1]}} &&
+                        bounds.mu == std::array<double, 2>{{mu[imu], mu[imu + 1]}},
+                        "nonuniform cell bounds retain their original faces");
+                require(bounds.r_cm == flat_bounds.r_cm &&
+                        bounds.v_cm_s == flat_bounds.v_cm_s && bounds.mu == flat_bounds.mu,
+                        "flat cell bounds agree");
                 total_volume += volume;
             }
         }
@@ -130,12 +158,72 @@ void test_invalid_indices() {
         require_throws<std::out_of_range>([&] {
             grid.cell_volume(index[0], index[1], index[2]);
         }, "invalid cell volume index");
+        require_throws<std::out_of_range>([&] {
+            grid.cell_bounds(index[0], index[1], index[2]);
+        }, "invalid cell bounds index");
+        require_throws<std::out_of_range>([&] {
+            grid.cell_phase_measure(index[0], index[1], index[2]);
+        }, "invalid cell phase measure index");
     }
     for (std::size_t flat : {grid.size(), huge}) {
         require_throws<std::out_of_range>([&] { grid.unflatten(flat); },
                                           "invalid flat index");
         require_throws<std::out_of_range>([&] { grid.cell_volume(flat); },
                                           "invalid flat volume index");
+        require_throws<std::out_of_range>([&] { grid.cell_bounds(flat); },
+                                          "invalid flat bounds index");
+        require_throws<std::out_of_range>([&] { grid.cell_phase_measure(flat); },
+                                          "invalid flat measure index");
+    }
+}
+
+void test_physical_state_location() {
+    const PhaseSpaceGrid grid({1.0, 1.25, 5.0}, {2.0, 2.5, 9.0},
+                              {-1.0, -0.7, 0.2, 1.0});
+    require(grid.locate_cell(1.0, 2.0, -1.0) == PhaseSpaceGrid::Index{{0, 0, 0}},
+            "closed lower domain corner");
+    require(grid.locate_cell(5.0, 9.0, 1.0) == PhaseSpaceGrid::Index{{1, 1, 2}},
+            "closed upper domain corner belongs to the last cell");
+    require(grid.locate_cell(1.25, 2.5, -0.7) == PhaseSpaceGrid::Index{{1, 1, 1}},
+            "internal faces belong to the right cell");
+    require(grid.locate_cell(1.1, 7.0, 0.2) == PhaseSpaceGrid::Index{{0, 1, 2}},
+            "nonuniform angular face belongs to the right cell");
+    require(grid.locate_cell(std::nextafter(1.25, 1.0),
+                             std::nextafter(2.5, 2.0),
+                             std::nextafter(-0.7, -1.0)) == PhaseSpaceGrid::Index{{0, 0, 0}},
+            "representable states just below internal faces stay on the left");
+    require(grid.locate_cell(std::nextafter(1.25, 5.0),
+                             std::nextafter(2.5, 9.0),
+                             std::nextafter(-0.7, 1.0)) == PhaseSpaceGrid::Index{{1, 1, 1}},
+            "representable states just above internal faces stay on the right");
+    for (std::size_t flat = 0; flat < grid.size(); ++flat) {
+        const auto bounds = grid.cell_bounds(flat);
+        const auto located = grid.locate_cell(
+            bounds.r_cm[0] + (bounds.r_cm[1] - bounds.r_cm[0]) / 2.0,
+            bounds.v_cm_s[0] + (bounds.v_cm_s[1] - bounds.v_cm_s[0]) / 2.0,
+            bounds.mu[0] + (bounds.mu[1] - bounds.mu[0]) / 2.0);
+        require(grid.flatten(located[0], located[1], located[2]) == flat,
+                "each nonuniform cell midpoint locates to its own cell");
+    }
+    const PhaseSpaceGrid single({0.0, 1.0}, {0.0, 1.0}, {-1.0, 1.0});
+    require(single.locate_cell(-0.0, 0.0, 1.0) == PhaseSpaceGrid::Index{{0, 0, 0}},
+            "zero speed/radius and mu=+1 are valid geometry in a single cell");
+
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const std::array<std::vector<double>, 3> invalid{{
+        {std::nextafter(1.0, 0.0), std::nextafter(5.0, infinity), -1.0, infinity, -infinity, nan},
+        {std::nextafter(2.0, 0.0), std::nextafter(9.0, infinity), -1.0, infinity, -infinity, nan},
+        {std::nextafter(-1.0, -infinity), std::nextafter(1.0, infinity), infinity, -infinity, nan}
+    }};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        for (double value : invalid[axis]) {
+            std::array<double, 3> state{{1.5, 3.0, 0.0}};
+            state[axis] = value;
+            require_throws<std::out_of_range>([&] {
+                grid.locate_cell(state[0], state[1], state[2]);
+            }, "out-of-domain or nonfinite physical coordinate");
+        }
     }
 }
 
@@ -178,6 +266,7 @@ int main() {
         test_volume_and_indices();
         test_invalid_faces();
         test_invalid_indices();
+        test_physical_state_location();
         test_numerical_range();
         std::cout << "phase-space grid tests passed\n";
         return EXIT_SUCCESS;

@@ -12,12 +12,26 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(transport_grid PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(transport_projector Code/src/PhaseSpaceProjector.cpp)
+target_include_directories(transport_projector PUBLIC Code/include)
+target_compile_features(transport_projector PUBLIC cxx_std_14)
+target_link_libraries(transport_projector PUBLIC transport_grid)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(transport_projector PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(test_phase_space_grid Code/tests/test_phase_space_grid.cpp)
   target_link_libraries(test_phase_space_grid PRIVATE transport_grid)
   add_test(NAME phase_space_grid COMMAND test_phase_space_grid)
   set_tests_properties(phase_space_grid PROPERTIES TIMEOUT 10)
+
+  add_executable(test_phase_space_projector
+    Code/tests/test_phase_space_projector.cpp)
+  target_link_libraries(test_phase_space_projector PRIVATE transport_projector)
+  add_test(NAME phase_space_projector COMMAND test_phase_space_projector)
+  set_tests_properties(phase_space_projector PROPERTIES TIMEOUT 10)
 
   find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
   add_test(NAME project_contract

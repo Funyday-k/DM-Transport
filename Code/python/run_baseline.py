@@ -1,52 +1,27 @@
 #!/usr/bin/env python3
-"""Run bounded DaMaSCUS regression tests and MVP smoke cases (stdlib only).
+"""Validate the saved T01 baseline bundle without modifying or rerunning it.
 
-This refreshes an existing CMake build without fetching dependencies. Small
-attempt counts measure execution and diagnostics, not converged capture,
-occupation, lifetime, or absolute physical rates. Times here are wall seconds.
+The CLI only reads the frozen config snapshot, three JSON reports, and current
+MVP JSON from this repository. It does not inspect source checkouts, invoke
+external tools, or write into the baseline directory.
 """
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
-import platform
-import re
-import shutil
-import signal
-import subprocess
 import sys
-import time
 from typing import Any
-import xml.etree.ElementTree as ET
 
 
-def utc_now() -> str:
-    """Return an ISO timestamp in UTC."""
-    return datetime.now(timezone.utc).isoformat()
-
-
-def sha256_file(path: Path) -> str | None:
-    """Hash an existing file; return None for an unavailable artifact."""
-    if not path.is_file():
-        return None
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def write_json(path: Path, data: Any) -> None:
-    """Atomically publish JSON; unmeasured values must remain JSON null."""
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(data, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    temporary.replace(path)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_BASELINE_DIR = PROJECT_ROOT / "Output/Result/baseline/20260915-initial"
+DEFAULT_CONFIG = PROJECT_ROOT / "Code/configs/benchmark/mvp.json"
+BUNDLE_NAMES = ("config.json", "run_manifest.json", "validation_report.json",
+                "performance_report.json")
 
 
 def validate_config(config: dict[str, Any]) -> None:
@@ -57,443 +32,303 @@ def validate_config(config: dict[str, Any]) -> None:
         "electron_cross_section_cm2": 0.0, "form_factor": "Contact",
         "solar_target_policy": "damascus_default_isotopes", "rate_interpolation_points": 0,
     }
-    if config.get("schema_version") != 1 or config.get("model") != expected:
-        raise ValueError("This runner supports only the schema 1 SD proton-only MVP model")
-    boundary = config["boundary"]
+    if not isinstance(config, dict) or config.get("schema_version") != 1 or config.get("model") != expected:
+        raise ValueError("This tool supports only the schema 1 SD proton-only MVP model")
+    boundary = config.get("boundary")
+    if not isinstance(boundary, dict):
+        raise ValueError("boundary must be an object")
     for key, value in {"policy": "legacy_1au_removal", "escape_radius_Rsun": 1.0,
                        "legacy_matching_radius_Rsun": 1.1, "outer_removal_radius_au": 1.0}.items():
         if boundary.get(key) != value:
             raise ValueError(f"Unsupported boundary setting: {key}")
-    benchmark = config["benchmark"]
-    if benchmark["cross_sections_cm2"] != [1e-36, 1e-34] or benchmark["mpi_ranks"] != 1:
+    benchmark = config.get("benchmark")
+    if not isinstance(benchmark, dict):
+        raise ValueError("benchmark must be an object")
+    if benchmark.get("cross_sections_cm2") != [1e-36, 1e-34] or benchmark.get("mpi_ranks") != 1:
         raise ValueError("This MVP requires two cross sections and one MPI rank")
-    halo = config["source"]["halo"]
-    if halo["distribution"] != "SHM" or len(halo["observer_velocity_km_s"]) != 3:
+    source = config.get("source")
+    halo = source.get("halo") if isinstance(source, dict) else None
+    if (not isinstance(halo, dict) or halo.get("distribution") != "SHM"
+            or not isinstance(halo.get("observer_velocity_km_s"), list)
+            or len(halo["observer_velocity_km_s"]) != 3):
         raise ValueError("The MVP requires SHM with a three-component observer velocity")
     for key, upper in {"attempts_per_case": 16, "seed": 2147483647}.items():
-        value = benchmark[key]
+        value = benchmark.get(key)
         if type(value) is not int or not 1 <= value <= upper:
             raise ValueError(f"{key} must be an integer in [1, {upper}]")
     for key, upper in {"trajectory_wall_timeout_s": 2, "case_timeout_s": 60,
                        "ctest_timeout_s": 60, "ctest_total_timeout_s": 600}.items():
-        value = benchmark[key]
+        value = benchmark.get(key)
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not 0 < value <= upper:
             raise ValueError(f"{key} must be positive and at most {upper} wall seconds")
 
 
-def render_case_config(config: dict[str, Any], mode: str, sigma_cm2: float,
-                       output_dir: Path) -> str:
-    """Render one libconfig input from the MVP (sigma in cm², output path absolute).
-
-    The legacy isospin flag MUST be false: true replaces (fp, fn) with (1, 1).
-    Detector/halo fields below are fixed CLI requirements, not fitted inputs.
-    """
-    validate_config(config)
-    if mode not in ("Capture", "Parameter point") or sigma_cm2 not in config["benchmark"]["cross_sections_cm2"]:
-        raise ValueError("Unsupported baseline case")
-    model, bench, halo = config["model"], config["benchmark"], config["source"]["halo"]
-    output_path = str(output_dir.resolve()) + "/"
-    if any(ord(char) < 32 for char in output_path):
-        raise ValueError("Control characters are not supported in output paths")
-    quoted_output = '"' + output_path.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    return f'''// Generated by run_baseline.py; bounded smoke, not production statistics.
-ID = "dm_transport_baseline";
-run_mode = "{mode}";
-sample_size = {bench["attempts_per_case"]};
-max_trajectories = {bench["attempts_per_case"]};
-fixed_seed = {bench["seed"]};
-interpolation_points = {model["rate_interpolation_points"]};
-isoreflection_rings = 1;
-snapshot_enabled = false;
-trajectory_summary_enabled = true;
-trajectory_events_enabled = false;
-max_trajectory_wall_time_sec = {float(bench["trajectory_wall_timeout_s"])};
-output_dir = {quoted_output};
-compute_halo_constraints = false;
-perform_full_scan = false;
-constraints_certainty = 0.95;
-constraints_mass_min = 2.0e-6;
-constraints_mass_max = 1.0e-3;
-constraints_masses = 2;
-cross_section_min = 1.0e-37;
-cross_section_max = 1.0e-32;
-cross_sections = 2;
-DM_mass = {float(model["mass_GeV"])};
-DM_spin = {float(model["spin"])};
-DM_fraction = 1.0;
-DM_light = true;
-DM_interaction = "SD";
-DM_isospin_conserved = false;
-DM_relative_couplings = ({float(model["proton_relative_coupling"])}, {float(model["neutron_relative_coupling"])});
-DM_cross_section_nucleon = {sigma_cm2:.17e};
-DM_cross_section_electron = {float(model["electron_cross_section_cm2"])};
-DM_form_factor = "Contact";
-DM_mediator_mass = 0.0;
-DD_experiment = "Nuclear recoil";
-DD_exposure = 300.0;
-DD_efficiency = 1.0;
-DD_observed_events = 0;
-DD_expected_background = 0.0;
-DD_targets_nuclear = ((1.0, 1));
-DD_threshold_nuclear = 0.1;
-DD_Emax_nuclear = 40.0;
-DD_energy_resolution = 0.0;
-DD_target_electron = "Xe";
-DD_threshold_electron = 4;
-DM_distribution = "{halo["distribution"]}";
-DM_local_density = {float(halo["local_density_GeV_cm3"])};
-SHM_v0 = {float(halo["v0_km_s"])};
-SHM_vObserver = ({', '.join(str(float(value)) for value in halo["observer_velocity_km_s"])});
-SHM_vEscape = {float(halo["escape_speed_km_s"])};
-'''
-
-
-def run_process(command: list[str], cwd: Path, log: Path, timeout_s: float) -> dict[str, Any]:
-    """Run with a wall-second deadline; terminate the whole POSIX process group."""
-    started = time.monotonic()
-    record: dict[str, Any] = {"command": command, "cwd": str(cwd), "log": str(log),
-                              "started_utc": utc_now(), "timeout_s": timeout_s,
-                              "status": "unresolved", "returncode": None}
-    print(f"Running {log.stem} (limit {timeout_s:g} s)", flush=True)
-    with log.open("w", encoding="utf-8") as stream:
-        try:
-            process = subprocess.Popen(command, cwd=cwd, stdout=stream, stderr=subprocess.STDOUT,
-                                       start_new_session=True)
-            try:
-                while True:
-                    remaining_s = timeout_s - (time.monotonic() - started)
-                    if remaining_s <= 0:
-                        raise subprocess.TimeoutExpired(command, timeout_s)
-                    try:
-                        process.wait(timeout=min(20, remaining_s))
-                        break
-                    except subprocess.TimeoutExpired:
-                        if time.monotonic() - started < timeout_s:
-                            print(f"Still running {log.stem}: {time.monotonic() - started:.0f} s", flush=True)
-                        else:
-                            raise
-                record["status"] = "passed" if process.returncode == 0 else "failed"
-            except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
-                record["status"] = "timeout" if isinstance(error, subprocess.TimeoutExpired) else "interrupted"
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                    process.wait(timeout=5)
-                except (ProcessLookupError, subprocess.TimeoutExpired):
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    process.wait(timeout=5)
-            record["returncode"] = process.returncode
-        except OSError as error:
-            record.update(status="failed", error=str(error))
-            stream.write(str(error) + "\n")
-    record["wall_time_s"] = time.monotonic() - started
-    print(f"{log.stem}: {record['status']} ({record['wall_time_s']:.3f} s)", flush=True)
-    return record
-
-
-def probe(command: list[str], cwd: Path) -> dict[str, Any]:
-    """Read bounded metadata; retain failures rather than inventing values."""
-    try:
-        result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=10)
-        return {"command": command, "returncode": result.returncode,
-                "stdout": result.stdout.strip(), "stderr": result.stderr.strip()}
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return {"command": command, "returncode": None, "stdout": None, "error": str(error)}
-
-
-def git_state(path: Path) -> dict[str, Any]:
-    """Record source/dependency commit and tracked/untracked dirty state."""
-    head = probe(["git", "rev-parse", "HEAD"], path)
-    status = probe(["git", "status", "--porcelain=v1", "--untracked-files=normal"], path)
-    return {"path": str(path), "head": head["stdout"] if head["returncode"] == 0 else None,
-            "dirty": bool(status["stdout"]) if status["returncode"] == 0 else None,
-            "head_probe": head, "status_probe": status}
-
-
-def build_state(build: Path, archive: Path) -> dict[str, Any]:
-    """Archive generated build inputs, binary hash, flags and dependency revisions."""
-    archive.mkdir(parents=True)
-    cache: dict[str, str] = {}
-    cache_path = build / "CMakeCache.txt"
-    if cache_path.is_file():
-        for line in cache_path.read_text().splitlines():
-            match = re.match(r"([^#/:][^:]*):[^=]+=(.*)", line)
-            if match:
-                cache[match[1]] = match[2]
-    files = ["CMakeCache.txt", "generated/version.hpp", "src/CMakeFiles/DaMaSCUS-SUN.dir/flags.make",
-             "src/CMakeFiles/DaMaSCUS-SUN.dir/link.txt"]
-    for name in files:
-        path = build / name
-        if path.is_file():
-            shutil.copy2(path, archive / name.replace("/", "_"))
-    version_path = build / "generated/version.hpp"
-    version = dict(re.findall(r'#define\s+(\w+)\s+"([^"]*)"', version_path.read_text())) if version_path.is_file() else {}
-    dependency_paths = {"obscura": build / "_deps/obscura-src",
-                        "libphysica": build / "_deps/obscura-src/external/libphysica",
-                        "googletest": build / "_deps/googletest-src"}
-    dependencies = {name: git_state(path) if path.is_dir() else None for name, path in dependency_paths.items()}
-    executable = build / "src/DaMaSCUS-SUN"
-    return {"cache": cache, "generated_version": version, "executable": str(executable),
-            "executable_sha256": sha256_file(executable), "dependencies": dependencies,
-            "solar_table_sha256": sha256_file(build / "share/DaMaSCUS-SUN/model_agss09.dat")}
-
-
-def parse_case_log(text: str) -> dict[str, Any]:
-    """Parse counts and dimensionless probabilities; never interpret throughput as C."""
-    text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
-    labels = {
-        "Simulated trajectories": "attempted", "Capture-classified trajectories": "classified",
-        "Unresolved non-captures": "unresolved_noncaptures", "Captured count": "captured",
-        "Numerical failure count": "numerical_failures", "Computational truncations": "computational_truncations",
-        "Complete evaporation count": "complete_evaporations", "Residence sample count": "residence_samples",
-        "Censored captured count": "censored_captured", "Outer-domain removed captures": "outer_domain_removed_captured",
-        "Invalid survival count": "invalid_survival_captured",
-    }
-    result: dict[str, Any] = {}
-    for label, key in labels.items():
-        match = re.search(r"^" + re.escape(label) + r":\s*(\d+)\s*$", text, re.MULTILINE)
-        result[key] = int(match[1]) if match else None
-    captured, attempted, classified = result["captured"], result["attempted"], result["classified"]
-    result["capture_probability_raw"] = captured / attempted if captured is not None and attempted else None
-    result["capture_probability_classified"] = captured / classified if captured is not None and classified else None
-    match = re.search(r"^Simulation time \[s\]:\s*([\d.eE+-]+)", text, re.MULTILINE)
-    result["legacy_simulation_wall_time_s"] = float(match[1]) if match else None
-    result["early_stop"] = re.findall(r"\*\*\* EARLY STOP: (.*?) \*\*\*", text)
-    result["binary_git_banner"] = re.findall(r"git:([^\s]+)", text)
-    actual: dict[str, Any] = {}
-    for label, key in {"Sigma_P[cm^2]": "sigma_proton_cm2", "Sigma_N[cm^2]": "sigma_neutron_cm2",
-                       "Sigma_E[cm^2]": "sigma_electron_cm2", "Spin": "spin"}.items():
-        match = re.search(r"^\s*" + re.escape(label) + r":\s*([\d.eE+-]+)\s*$", text, re.MULTILINE)
-        actual[key] = float(match[1]) if match else None
-    match = re.search(r"fn/fp\s*=\s*([\d.eE+-]+)", text)
-    actual["fn_over_fp"] = float(match[1]) if match else None
-    match = re.search(r"^\s*Mass:\s*([\d.eE+-]+)\s*(GeV|MeV|keV|eV)\s*$", text, re.MULTILINE)
-    actual["mass_GeV"] = float(match[1]) * {"GeV": 1, "MeV": 1e-3, "keV": 1e-6, "eV": 1e-9}[match[2]] if match else None
-    actual["interaction"] = "SD" if re.search(r"Interaction:\s*Spin-Dependent \(SD\)", text) else None
-    for label, key in {"Low mass": "light", "Isospin conservation": "isospin_conserved",
-                       "Sc. rate interpolation": "rate_interpolation_enabled"}.items():
-        match = re.search(re.escape(label) + r":\s*\[([ x])\]", text)
-        actual[key] = match[1] == "x" if match else None
-    match = re.search(r"Trajectory boundary \[Rsun\]:\s*([\d.eE+-]+)", text)
-    actual["matching_radius_Rsun"] = float(match[1]) if match else None
-    result["actual_model"] = actual
-    return result
-
-
-def check_case_contract(metrics: dict[str, Any], config: dict[str, Any], sigma_cm2: float,
-                        source_head: str | None, headers: dict[str, Any]) -> dict[str, Any]:
-    """Check the executed model/banner and available mass (GeV)/sigma (cm²) headers."""
-    expected = {"mass_GeV": config["model"]["mass_GeV"], "spin": config["model"]["spin"],
-                "sigma_proton_cm2": sigma_cm2, "sigma_neutron_cm2": 0.0,
-                "sigma_electron_cm2": 0.0, "fn_over_fp": 0.0, "interaction": "SD",
-                "light": True, "isospin_conserved": False, "rate_interpolation_enabled": False,
-                "matching_radius_Rsun": config["boundary"]["legacy_matching_radius_Rsun"]}
-    checks: dict[str, Any] = {}
-    actual = metrics.get("actual_model", {})
-    for key, expected_value in expected.items():
-        value = actual.get(key)
-        if value is None:
-            checks[key] = None
-        elif isinstance(expected_value, (str, bool)):
-            checks[key] = value == expected_value
-        else:
-            checks[key] = math.isfinite(value) and math.isclose(value, expected_value, rel_tol=1e-6, abs_tol=0)
-    banners = metrics.get("binary_git_banner", [])
-    checks["binary_matches_source_head"] = bool(source_head and banners and all(
-        re.fullmatch(r"[0-9a-f]{7,40}", banner.split("/")[-1])
-        and source_head.startswith(banner.split("/")[-1]) for banner in banners))
-    artifact_checks: dict[str, Any] = {}
-    for path, fields in headers.items():
-        try:
-            artifact_checks[path] = (math.isclose(float(fields["DM_mass_GeV"]), expected["mass_GeV"], rel_tol=1e-6)
-                                     and math.isclose(float(fields["DM_sigma_cm2"]), sigma_cm2, rel_tol=1e-6))
-        except (ValueError, KeyError):
-            artifact_checks[path] = None
-    return {"runtime_checks": checks, "runtime_model_verified": all(value is True for value in checks.values()),
-            "artifact_mass_sigma_checks": artifact_checks,
-            "artifact_mass_sigma_verified": all(value is True for value in artifact_checks.values()) if artifact_checks else None}
-
-
-def read_case_headers(case_dir: Path) -> dict[str, Any]:
-    """Read raw legacy artifact headers, preserving values and units as printed."""
-    headers: dict[str, Any] = {}
-    for path in sorted(case_dir.rglob("bincount.txt")):
-        fields = {}
-        with path.open() as stream:
-            for line in stream:
-                if not line.startswith("#"):
-                    break
-                match = re.match(r"#\s+([^=]+?)\s*=\s*(.*)", line)
-                if match:
-                    fields[match[1]] = match[2].strip()
-        headers[str(path)] = fields
-    return headers
-
-
-def ctest_results(inventory: dict[str, Any], junit: Path, log: Path) -> list[dict[str, Any]]:
-    """Report each existing CTest; missing/partial evidence stays unresolved."""
-    results = {test["name"]: {"name": test["name"], "status": "unresolved", "wall_time_s": None}
-               for test in inventory.get("tests", [])}
-    if junit.is_file():
-        try:
-            for test in ET.parse(junit).iter("testcase"):
-                status = "failed" if test.find("failure") is not None else "passed"
-                if test.find("skipped") is not None:
-                    status = "skipped"
-                entry = {"name": test.attrib["name"], "status": status,
-                         "wall_time_s": float(test.attrib.get("time", "0"))}
-                failure = test.find("failure")
-                if failure is not None:
-                    entry["failure"] = failure.attrib.get("message", failure.text)
-                    if "timeout" in str(entry["failure"]).lower():
-                        entry["status"] = "timeout"
-                results[entry["name"]] = entry
-        except (ET.ParseError, ValueError, KeyError):
-            pass
-    # A killed CTest may not publish JUnit. Only completed lines prove a result.
-    for line in log.read_text(errors="replace").splitlines():
-        match = re.search(r"Test\s+#\d+:\s+(\S+)\s+\.+\s+(Passed|\*\*\*Failed|\*\*\*Timeout)\s+([\d.]+) sec", line)
-        if match and match[1] in results and results[match[1]]["status"] == "unresolved":
-            results[match[1]].update(status={"Passed": "passed", "***Failed": "failed", "***Timeout": "timeout"}[match[2]], wall_time_s=float(match[3]))
-    return list(results.values())
-
-
-def main() -> int:
-    """Refresh the existing build, run bounded checks, and publish three JSON reports."""
-    parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("damascus-source", "damascus-build", "output", "config"):
-        parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--cmake-osx-sysroot", type=Path,
-                        help="Optional existing macOS SDK for this build only; no global toolchain changes")
-    args = parser.parse_args()
-    source, build, output, config_path = (getattr(args, key).resolve() for key in
-                                          ("damascus_source", "damascus_build", "output", "config"))
-    config = json.loads(config_path.read_text())
-    validate_config(config)
-    if not (source / "CMakeLists.txt").is_file() or not (build / "CMakeCache.txt").is_file():
-        parser.error("An existing DaMaSCUS source and configured build are required")
-    if any(os.environ.get(key) for key in ("DAMASCUS_SUN_SOLAR_MODEL", "DAMASCUS_SUN_DATA_DIR")):
-        parser.error("Unset DaMaSCUS solar-data overrides so this baseline uses the hashed build-tree solar table")
-    if output.exists() and any(output.iterdir()):
-        parser.error("Refusing to overwrite a nonempty output directory")
-    output.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(config_path, output / "config.json")
-    shutil.copy2(Path(__file__), output / "executed_runner.py")
-    started = time.monotonic()
-    bench = config["benchmark"]
-    manifest: dict[str, Any] = {"schema_version": 1, "started_utc": utc_now(), "status": "running",
-        "config_path": str(config_path), "config_sha256": sha256_file(config_path), "config": config,
-        "runner_path": str(Path(__file__).resolve()), "runner_sha256": sha256_file(Path(__file__)),
-        "solar_environment_overrides": {key: os.environ.get(key) for key in
-                                         ("DAMASCUS_SUN_SOLAR_MODEL", "DAMASCUS_SUN_DATA_DIR")},
-        "source_before": git_state(source), "platform": {"python": sys.version, "platform": platform.platform(),
-        "machine": platform.machine(), "processor": platform.processor(), "logical_cpu_count": os.cpu_count()},
-        "solar_source_sha256": sha256_file(source / "data/model_agss09.dat"), "commands": [], "cases": []}
-    pre = build_state(build, output / "provenance/before")
-    manifest["build_before"] = pre
-    manifest["tools"] = {name: probe([name, "--version"], source) for name in
-                         ("cmake", "ctest", pre["cache"].get("CMAKE_CXX_COMPILER", "c++"),
-                          pre["cache"].get("MPIEXEC_EXECUTABLE", "mpiexec"))}
-    write_json(output / "run_manifest.json", manifest)
-    if Path(pre["cache"].get("CMAKE_HOME_DIRECTORY", "")).resolve() != source:
-        raise ValueError("Build cache belongs to a different source directory; refusing to reconfigure")
-    configure_command = ["cmake", "-S", str(source), "-B", str(build),
-                         "-DFETCHCONTENT_FULLY_DISCONNECTED=ON", "-DFETCHCONTENT_UPDATES_DISCONNECTED=ON"]
-    if args.cmake_osx_sysroot:
-        configure_command.append("-DCMAKE_OSX_SYSROOT=" + str(args.cmake_osx_sysroot.resolve()))
-    configure = run_process(configure_command,
-                            source, output / "configure.log", 120)
-    manifest["commands"].append(configure)
-    if configure["status"] == "passed":
-        manifest["commands"].append(run_process(["cmake", "--build", str(build), "--parallel", "2"],
-                                                 source, output / "build.log", 300))
-    post = build_state(build, output / "provenance/after")
-    manifest["build_after"] = post
-    head = manifest["source_before"]["head"]
-    compiled = post["generated_version"].get("GIT_COMMIT_HASH", "unknown")
-    refreshed = len(manifest["commands"]) == 2 and all(item["status"] == "passed" for item in manifest["commands"])
-    manifest["build_matches_source_head"] = bool(refreshed and head and head.startswith(compiled) and not manifest["source_before"]["dirty"])
-    manifest["build_matches_legacy_1au"] = post["cache"].get("DAMASCUS_RADIAL_DOMAIN_MAX_AU") in ("1", "1.0")
-    write_json(output / "run_manifest.json", manifest)
-    inventory_process = run_process(["ctest", "--test-dir", str(build), "--show-only=json-v1"], source,
-                                    output / "ctest-inventory.json", 30)
-    manifest["commands"].append(inventory_process)
-    try:
-        inventory = json.loads((output / "ctest-inventory.json").read_text())
-    except json.JSONDecodeError:
-        inventory = {}
-    suite = run_process(["ctest", "--test-dir", str(build), "-j", "1", "--timeout", str(bench["ctest_timeout_s"]),
-                         "--output-on-failure", "--output-junit", str(output / "ctest-junit.xml")],
-                        source, output / "ctest.log", bench["ctest_total_timeout_s"])
-    manifest["commands"].append(suite)
-    test_results = ctest_results(inventory, output / "ctest-junit.xml", output / "ctest.log")
-    executable = Path(post["executable"])
-    for mode in ("Capture", "Parameter point"):
-        for sigma_cm2 in bench["cross_sections_cm2"]:
-            case_id = f"{'capture' if mode == 'Capture' else 'ordinary'}-sigma{sigma_cm2:.0e}"
-            case_dir = output / case_id
-            case_dir.mkdir()
-            cfg_path = case_dir / "generated.cfg"
-            cfg_path.write_text(render_case_config(config, mode, sigma_cm2, case_dir / "data"))
-            case: dict[str, Any] = {"id": case_id, "mode": mode, "sigma_cm2": sigma_cm2,
-                "config_path": str(cfg_path), "config_sha256": sha256_file(cfg_path),
-                "status": "unresolved", "wall_time_s": None, "metrics": {}, "artifact_headers": {}}
-            if executable.is_file() and refreshed and manifest["build_matches_legacy_1au"]:
-                execution = run_process([str(executable), str(cfg_path)], case_dir, case_dir / "run.log", bench["case_timeout_s"])
-                case.update(execution)
-                case["metrics"] = parse_case_log((case_dir / "run.log").read_text(errors="replace"))
-                case["artifact_headers"] = read_case_headers(case_dir)
-                case["contract_checks"] = check_case_contract(case["metrics"], config, sigma_cm2, head, case["artifact_headers"])
-                case["smoke_summary_complete"] = case["status"] == "passed" and all(
-                    case["metrics"].get(key) is not None for key in ("attempted", "classified", "captured"))
-                case["smoke_summary_complete"] = (case["smoke_summary_complete"]
-                    and case["contract_checks"]["runtime_model_verified"]
-                    and case["contract_checks"]["artifact_mass_sigma_verified"] is not False
-                    and (mode == "Capture" or case["contract_checks"]["artifact_mass_sigma_verified"] is True))
+def _snapshot_mismatches(frozen: Any, current: Any, path: str = "config") -> list[str]:
+    """Compare a frozen JSON value with a current value that may add fields."""
+    if isinstance(frozen, dict) and isinstance(current, dict):
+        errors = []
+        for key, value in frozen.items():
+            child = f"{path}.{key}"
+            if key not in current:
+                errors.append(f"{child} is missing from the current MVP config")
             else:
-                case["skip_reason"] = "No successfully refreshed executable with the supported 1 AU build boundary"
-                case["smoke_summary_complete"] = False
-            case["physical_baseline_qualified"] = False
-            case["qualification_reason"] = "Bounded smoke only; no source-conditioned lifetime/occupation validation or converged capture statistics"
-            if not case["metrics"].get("captured"):
-                case["qualification_reason"] += "; no captured trajectories recorded"
-            elif mode == "Parameter point" and not case["metrics"].get("complete_evaporations"):
-                case["qualification_reason"] += "; no complete evaporation trajectories recorded"
-            manifest["cases"].append(case)
-            write_json(output / "run_manifest.json", manifest)
-    manifest["source_after"] = git_state(source)
-    manifest["finished_utc"] = utc_now()
-    manifest["total_wall_time_s"] = time.monotonic() - started
-    passed = bool(test_results) and all(test["status"] == "passed" for test in test_results)
-    successful = (passed and all(command["status"] == "passed" for command in manifest["commands"])
-                  and manifest["build_matches_source_head"] and all(case["smoke_summary_complete"] for case in manifest["cases"]))
-    manifest["status"] = "completed_smoke" if successful else "completed_with_unresolved_or_failed_checks"
-    validation = {"schema_version": 1, "status": manifest["status"], "mvp_physics_acceptance": False,
-        "existing_ctest_scope": "DaMaSCUS regression suite; not all tests implement the proton-only MVP or transport acceptance gates",
-        "ctest_command": suite, "ctest_tests": test_results, "ctest_all_passed": passed,
-        "build_matches_source_head": manifest["build_matches_source_head"],
-        "source_unchanged": manifest["source_before"] == manifest["source_after"],
-        "cases": manifest["cases"], "absolute_capture_rate_particles_per_s": None,
-        "occupation_validation": None, "lifetime_validation": None, "finite_age_validation": None,
-        "limitations": ["Capture raw/valid rates are dimensionless probabilities; captured particle rate is wall-time throughput, not solar C.",
-                       "Capture mode stops at first bound scattering and does not export source phase-space samples.",
-                       "Legacy matching radius is 1.1 Rsun; residence removal is 1 AU. No Rsun or full-return equivalence is claimed.",
-                       "Wall-time truncation can censor trajectories and depends on machine load; counts are diagnostic, not a converged estimate."]}
-    performance = {"schema_version": 1, "total_wall_time_s": manifest["total_wall_time_s"],
-        "ctest_wall_time_s": suite["wall_time_s"], "peak_memory_bytes": None, "collision_kernel_wall_time_s": None,
-        "online_solve_wall_time_s": None, "physical_absolute_capture_rate_particles_per_s": None,
-        "cases": [{"id": case["id"], "wall_time_s": case["wall_time_s"], "status": case["status"],
-                   "attempted_trajectories": case["metrics"].get("attempted"),
-                   "attempted_trajectories_per_wall_s": case["metrics"].get("attempted") / case["wall_time_s"]
-                   if case["metrics"].get("attempted") is not None and case["wall_time_s"] else None,
-                   "complete_evaporations": case["metrics"].get("complete_evaporations")} for case in manifest["cases"]]}
-    write_json(output / "run_manifest.json", manifest)
-    write_json(output / "validation_report.json", validation)
-    write_json(output / "performance_report.json", performance)
-    print(f"Reports: {output}; {manifest['status']}", flush=True)
-    return 0 if successful else 1
+                errors.extend(_snapshot_mismatches(value, current[key], child))
+        return errors
+    if isinstance(frozen, list) and isinstance(current, list):
+        if len(frozen) != len(current):
+            return [f"{path} length differs from the frozen T01 config"]
+        errors = []
+        for index, (old, new) in enumerate(zip(frozen, current)):
+            errors.extend(_snapshot_mismatches(old, new, f"{path}[{index}]"))
+        return errors
+    if type(frozen) is not type(current) or frozen != current:
+        return [f"{path} differs from the frozen T01 config"]
+    return []
+
+
+def _index_cases(report: dict[str, Any], label: str, errors: list[str]) -> dict[str, dict[str, Any]]:
+    """Index case objects while reporting malformed or duplicate identifiers."""
+    cases = report.get("cases")
+    if not isinstance(cases, list):
+        errors.append(f"{label}.cases must be a list")
+        return {}
+    indexed: dict[str, dict[str, Any]] = {}
+    for case in cases:
+        if not isinstance(case, dict) or not isinstance(case.get("id"), str):
+            errors.append(f"{label}.cases contains an entry without a string id")
+            continue
+        case_id = case["id"]
+        if case_id in indexed:
+            errors.append(f"{label}.cases contains duplicate id {case_id}")
+        indexed[case_id] = case
+    return indexed
+
+
+def _matches_ratio(value: Any, numerator: int, denominator: float) -> bool:
+    """Return whether a JSON number equals a defined finite ratio."""
+    return (denominator > 0 and isinstance(value, (int, float))
+            and not isinstance(value, bool) and math.isfinite(value)
+            and math.isclose(value, numerator / denominator, rel_tol=1e-12, abs_tol=0))
+
+
+def validate_baseline_bundle(config: dict[str, Any], manifest: dict[str, Any],
+                             validation: dict[str, Any],
+                             performance: dict[str, Any],
+                             frozen_config_bytes: bytes) -> list[str]:
+    """Return consistency failures for the frozen T01 reports and current MVP."""
+    errors: list[str] = []
+    documents = {"mvp config": config, "run manifest": manifest,
+                 "validation report": validation, "performance report": performance}
+    if any(not isinstance(document, dict) for document in documents.values()):
+        return [f"{name} must contain a JSON object" for name, document in documents.items()
+                if not isinstance(document, dict)]
+    for name, document in documents.items():
+        if document.get("schema_version") != 1:
+            errors.append(f"{name} must use schema_version 1")
+    try:
+        validate_config(config)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        errors.append(f"invalid MVP config: {error}")
+        return errors
+
+    benchmark = config["benchmark"]
+    regression_sigma = benchmark.get("regression_cross_section_cm2")
+    if regression_sigma not in benchmark["cross_sections_cm2"]:
+        errors.append("benchmark.regression_cross_section_cm2 must select a baseline cross section")
+    try:
+        frozen_config = json.loads(frozen_config_bytes)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        frozen_config = None
+        errors.append(f"invalid frozen config.json: {error}")
+    if not isinstance(frozen_config, dict):
+        errors.append("frozen config.json must contain a JSON object")
+    elif frozen_config != manifest.get("config"):
+        errors.append("frozen config.json differs from the config embedded in the run manifest")
+    if hashlib.sha256(frozen_config_bytes).hexdigest() != manifest.get("config_sha256"):
+        errors.append("frozen config.json SHA-256 differs from run manifest config_sha256")
+    if not isinstance(manifest.get("config"), dict):
+        errors.append("run manifest must embed its frozen config")
+    if isinstance(frozen_config, dict):
+        try:
+            validate_config(frozen_config)
+        except (AttributeError, KeyError, TypeError, ValueError) as error:
+            errors.append(f"invalid frozen T01 config: {error}")
+        errors.extend(_snapshot_mismatches(frozen_config, config))
+
+    expected_status = "completed_smoke_after_mpi_retry"
+    if manifest.get("status") != expected_status:
+        errors.append(f"run manifest status must be {expected_status}")
+    if validation.get("status") != manifest.get("status"):
+        errors.append("validation status differs from run manifest status")
+    for key in ("build_matches_source_head", "build_matches_legacy_1au"):
+        if manifest.get(key) is not True:
+            errors.append(f"run manifest {key} is not true")
+    for key in ("build_matches_source_head", "source_unchanged", "ctest_all_passed"):
+        if validation.get(key) is not True:
+            errors.append(f"validation report {key} is not true")
+    tests = validation.get("ctest_tests")
+    if not isinstance(tests, list) or not tests:
+        errors.append("validation report has no final CTest results")
+    elif any(not isinstance(test, dict) or test.get("status") != "passed" for test in tests):
+        errors.append("validation report contains a non-passing final CTest result")
+    if validation.get("mvp_physics_acceptance") is not False:
+        errors.append("bounded T01 smoke must not claim MVP physics acceptance")
+    for key in ("absolute_capture_rate_particles_per_s", "occupation_validation",
+                "lifetime_validation", "finite_age_validation"):
+        if validation.get(key) is not None:
+            errors.append(f"validation report must leave {key} unqualified")
+
+    expected_cases = {
+        f"{'capture' if mode == 'Capture' else 'ordinary'}-sigma{sigma:.0e}": (mode, sigma)
+        for mode in ("Capture", "Parameter point")
+        for sigma in benchmark["cross_sections_cm2"]
+    }
+    manifest_cases = _index_cases(manifest, "run manifest", errors)
+    performance_cases = _index_cases(performance, "performance report", errors)
+    if set(manifest_cases) != set(expected_cases):
+        errors.append("run manifest case ids do not match the MVP mode/cross-section matrix")
+    if validation.get("cases") != manifest.get("cases"):
+        errors.append("validation cases differ from the run manifest cases")
+    if set(performance_cases) != set(expected_cases):
+        errors.append("performance case ids do not match the MVP mode/cross-section matrix")
+
+    for case_id, (mode, sigma) in expected_cases.items():
+        case = manifest_cases.get(case_id)
+        if case is None:
+            continue
+        if case.get("mode") != mode or case.get("sigma_cm2") != sigma:
+            errors.append(f"{case_id} mode or cross section differs from the MVP")
+        if case.get("status") != "passed" or case.get("smoke_summary_complete") is not True:
+            errors.append(f"{case_id} is not a completed smoke case")
+        if case.get("physical_baseline_qualified") is not False:
+            errors.append(f"{case_id} must remain unqualified as a physical baseline")
+        contract = case.get("contract_checks")
+        if not isinstance(contract, dict) or contract.get("runtime_model_verified") is not True:
+            errors.append(f"{case_id} runtime model contract is not verified")
+        elif mode == "Parameter point" and contract.get("artifact_mass_sigma_verified") is not True:
+            errors.append(f"{case_id} artifact mass/cross-section contract is not verified")
+        metrics = case.get("metrics")
+        if not isinstance(metrics, dict):
+            errors.append(f"{case_id} metrics must be an object")
+            continue
+        attempted = metrics.get("attempted")
+        classified = metrics.get("classified")
+        unresolved = metrics.get("unresolved_noncaptures")
+        captured = metrics.get("captured")
+        counts = (attempted, classified, unresolved, captured)
+        if any(type(value) is not int or value < 0 for value in counts):
+            errors.append(f"{case_id} has invalid trajectory counts")
+        else:
+            if attempted != benchmark["attempts_per_case"]:
+                errors.append(f"{case_id} attempted count differs from the MVP")
+            if classified + unresolved != attempted or captured > classified:
+                errors.append(f"{case_id} trajectory accounting does not close")
+            raw = metrics.get("capture_probability_raw")
+            classified_probability = metrics.get("capture_probability_classified")
+            if not _matches_ratio(raw, captured, attempted):
+                errors.append(f"{case_id} raw capture probability is inconsistent")
+            if not _matches_ratio(classified_probability, captured, classified):
+                errors.append(f"{case_id} classified capture probability is inconsistent")
+
+        timing = performance_cases.get(case_id)
+        if timing is None:
+            continue
+        for report_key, case_key in (("status", "status"), ("wall_time_s", "wall_time_s"),
+                                     ("attempted_trajectories", "attempted"),
+                                     ("complete_evaporations", "complete_evaporations")):
+            source = case if case_key in case else metrics
+            if timing.get(report_key) != source.get(case_key):
+                errors.append(f"{case_id} {report_key} differs between reports")
+        wall_time = timing.get("wall_time_s")
+        throughput = timing.get("attempted_trajectories_per_wall_s")
+        if not isinstance(wall_time, (int, float)) or isinstance(wall_time, bool) or wall_time <= 0:
+            errors.append(f"{case_id} has invalid wall time")
+        elif type(attempted) is not int or not _matches_ratio(throughput, attempted, wall_time):
+            errors.append(f"{case_id} throughput is inconsistent with count and wall time")
+
+    if performance.get("total_wall_time_s") != manifest.get("total_wall_time_s"):
+        errors.append("total wall time differs between performance report and run manifest")
+    ctest_command = validation.get("ctest_command")
+    if isinstance(ctest_command, dict) and performance.get("ctest_wall_time_s") != ctest_command.get("wall_time_s"):
+        errors.append("CTest wall time differs between performance and validation reports")
+    if manifest.get("analysis") != validation.get("analysis") or manifest.get("analysis") != performance.get("analysis"):
+        errors.append("post-run analysis provenance differs between reports")
+    for key in ("physical_absolute_capture_rate_particles_per_s", "collision_kernel_wall_time_s",
+                "online_solve_wall_time_s"):
+        if performance.get(key) is not None:
+            errors.append(f"performance report must leave {key} unmeasured")
+    return errors
+
+
+def _project_path(path: Path, kind: str) -> Path:
+    """Resolve a CLI input while refusing to leave this repository."""
+    candidate = path if path.is_absolute() else PROJECT_ROOT / path
+    candidate = candidate.absolute()
+    try:
+        candidate.relative_to(PROJECT_ROOT)
+    except ValueError as error:
+        raise ValueError(f"{kind} must be inside {PROJECT_ROOT}") from error
+    try:
+        resolved = candidate.resolve(strict=True)
+        resolved.relative_to(PROJECT_ROOT)
+    except (OSError, ValueError) as error:
+        raise ValueError(f"{kind} is missing or resolves outside {PROJECT_ROOT}") from error
+    return resolved
+
+
+def _read_bytes(path: Path) -> bytes:
+    """Read one file without creating or modifying anything."""
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise ValueError(f"cannot read {path}: {error}") from error
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    """Read one JSON object without creating or modifying any file."""
+    try:
+        value = json.loads(_read_bytes(path))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot parse {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return value
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Read and cross-check the saved T01 JSON bundle; never execute it."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--baseline-dir", type=Path, default=DEFAULT_BASELINE_DIR,
+                        help="Directory containing config.json and the three saved T01 reports")
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG,
+                        help="Current MVP JSON to check against the frozen manifest config")
+    args = parser.parse_args(argv)
+    try:
+        baseline_dir = _project_path(args.baseline_dir, "baseline directory")
+        if not baseline_dir.is_dir():
+            raise ValueError(f"baseline directory is not a directory: {baseline_dir}")
+        config_path = _project_path(args.config, "MVP config")
+        if not config_path.is_file():
+            raise ValueError(f"MVP config is not a file: {config_path}")
+        bundle_paths = {name: _project_path(baseline_dir / name, name) for name in BUNDLE_NAMES}
+        config = _read_json_object(config_path)
+        frozen_config_bytes = _read_bytes(bundle_paths["config.json"])
+        reports = {name: _read_json_object(bundle_paths[name]) for name in BUNDLE_NAMES[1:]}
+    except ValueError as error:
+        parser.error(str(error))
+    errors = validate_baseline_bundle(config, reports["run_manifest.json"],
+                                      reports["validation_report.json"],
+                                      reports["performance_report.json"],
+                                      frozen_config_bytes)
+    if errors:
+        print("T01 baseline bundle validation failed:", file=sys.stderr)
+        for error in errors:
+            print(f"- {error}", file=sys.stderr)
+        return 1
+    case_count = len(reports["run_manifest.json"]["cases"])
+    test_count = len(reports["validation_report.json"]["ctest_tests"])
+    print(f"T01 baseline bundle is valid ({case_count} cases, {test_count} final CTest results).")
+    return 0
 
 
 if __name__ == "__main__":

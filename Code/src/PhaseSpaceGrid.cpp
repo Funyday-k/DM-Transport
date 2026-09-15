@@ -1,5 +1,6 @@
 #include "transport/PhaseSpaceGrid.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -36,6 +37,21 @@ std::size_t checked_count_product(std::size_t a, std::size_t b) {
         throw std::overflow_error("phase-space cell count overflows size_t");
     }
     return a * b;
+}
+
+std::size_t locate_axis(const std::vector<double>& faces, double coordinate,
+                        const char* name) {
+    if (!std::isfinite(coordinate) || coordinate < faces.front() ||
+        coordinate > faces.back()) {
+        throw std::out_of_range(std::string(name) +
+                                " coordinate is outside the finite grid domain");
+    }
+    if (coordinate == faces.back()) {
+        return faces.size() - 2;
+    }
+    return static_cast<std::size_t>(
+        std::upper_bound(faces.begin(), faces.end(), coordinate) -
+        faces.begin() - 1);
 }
 
 }  // namespace
@@ -80,6 +96,18 @@ std::size_t PhaseSpaceGrid::size() const noexcept {
     return size_;
 }
 
+const std::vector<double>& PhaseSpaceGrid::r_faces() const noexcept {
+    return r_faces_cm_;
+}
+
+const std::vector<double>& PhaseSpaceGrid::v_faces() const noexcept {
+    return v_faces_cm_s_;
+}
+
+const std::vector<double>& PhaseSpaceGrid::mu_faces() const noexcept {
+    return mu_faces_;
+}
+
 std::size_t PhaseSpaceGrid::flatten(std::size_t ir, std::size_t iv,
                                    std::size_t imu) const {
     if (ir >= shape_[0] || iv >= shape_[1] || imu >= shape_[2]) {
@@ -98,6 +126,27 @@ PhaseSpaceGrid::Index PhaseSpaceGrid::unflatten(std::size_t flat_index) const {
              radial_velocity_index % shape_[1], imu}};
 }
 
+PhaseSpaceGrid::CellBounds PhaseSpaceGrid::cell_bounds(
+    std::size_t ir, std::size_t iv, std::size_t imu) const {
+    flatten(ir, iv, imu);
+    return {{{r_faces_cm_[ir], r_faces_cm_[ir + 1]}},
+            {{v_faces_cm_s_[iv], v_faces_cm_s_[iv + 1]}},
+            {{mu_faces_[imu], mu_faces_[imu + 1]}}};
+}
+
+PhaseSpaceGrid::CellBounds PhaseSpaceGrid::cell_bounds(
+    std::size_t flat_index) const {
+    const Index index = unflatten(flat_index);
+    return cell_bounds(index[0], index[1], index[2]);
+}
+
+PhaseSpaceGrid::Index PhaseSpaceGrid::locate_cell(
+    double r_cm, double v_cm_s, double mu) const {
+    return {{locate_axis(r_faces_cm_, r_cm, "r_cm"),
+             locate_axis(v_faces_cm_s_, v_cm_s, "v_cm_s"),
+             locate_axis(mu_faces_, mu, "mu")}};
+}
+
 double PhaseSpaceGrid::cell_volume(std::size_t ir, std::size_t iv,
                                   std::size_t imu) const {
     flatten(ir, iv, imu);
@@ -107,6 +156,15 @@ double PhaseSpaceGrid::cell_volume(std::size_t ir, std::size_t iv,
 double PhaseSpaceGrid::cell_volume(std::size_t flat_index) const {
     const Index index = unflatten(flat_index);
     return volume_unchecked(index[0], index[1], index[2]);
+}
+
+double PhaseSpaceGrid::cell_phase_measure(std::size_t ir, std::size_t iv,
+                                         std::size_t imu) const {
+    return cell_volume(ir, iv, imu);
+}
+
+double PhaseSpaceGrid::cell_phase_measure(std::size_t flat_index) const {
+    return cell_volume(flat_index);
 }
 
 double PhaseSpaceGrid::volume_unchecked(std::size_t ir, std::size_t iv,

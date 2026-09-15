@@ -68,19 +68,23 @@
   "pending_gates": {
     "streaming_fake_escape_absolute_budget": {
       "reason": "Requires a declared observable and physical observation window.",
+      "owner_task": "T07",
       "must_set_before": "T07 acceptance"
     },
     "tail_observable_absolute_budget": {
       "reason": "Requires pilot statistics and a declared tail observable.",
+      "owner_task": "T06",
       "must_set_before": "T06 tail acceptance"
     },
     "negative_occupation_tolerance": {
       "reason": "Requires the occupation scale and solver normalization.",
+      "owner_task": "T09",
       "must_set_before": "T09 acceptance"
     }
   },
   "benchmark": {
     "cross_sections_cm2": [1e-36, 1e-34],
+    "regression_cross_section_cm2": 1e-34,
     "seed": 20260915,
     "mpi_ranks": 1,
     "attempts_per_case": 16,

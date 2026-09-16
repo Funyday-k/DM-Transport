@@ -2,7 +2,7 @@
 
 维护版本：2026-09-16。依据：[Proposal.md](Proposal.md)、DaMaSCUS-SUN-EVAP 只读固定提交及用户补充建议。具体源码定位见 [源码依据附录](Proposal.md#code-reference)；当前设计决策、局域核公式和后端契约见 [工程与性能设计附录](Proposal.md#performance-design)。
 
-已进入初步实施，T00/T01 已完成，T02/T04/P00 正在推进，T03 及其余任务为 `pending`；当前状态集中于 §8。表中的物理验收数值仍是门槛，不是已取得的结果。
+已进入初步实施，T00–T02 已完成，T03/T04/P00 正在推进，其余任务为 `pending`；当前状态集中于 §8。表中的物理验收数值仍是门槛，不是已取得的结果。
 
 任务体系为 T00–T20、P00–P09，科学阶段为 G0–G6。G4 仍指有限年龄，不能被 CPU/GPU 里程碑替换。Proposal 已同步修正源码事实，原稿存于只读 [v1 存档](archive/Proposal_2026-09-14_v1.md)。
 
@@ -16,7 +16,7 @@
 
 | 阶段 | 交付结果 | 完成条件 |
 | --- | --- | --- |
-| G0：可信物理底座 | 固定基线、项目内移植物理模块、旧轨迹作为只读参照 | T00–T03 通过；来源、模型范围和随机数兼容性明确 |
+| G0：可信物理底座 | 固定基线、项目内移植物理模块、旧轨迹作为只读参照 | T00–T02 完成且 T03 `physics_validation` 通过；有合规外部 artifact 时 `reference_parity` 必须通过，无 artifact 时必须报告 `not_evaluated` 及限制 |
 | G1：局域碰撞原型 | 网格、可缓存碰撞生成元、热浴验证 | T04–T06 通过 |
 | G2：人工源输运 | 引力 streaming、边界、稳态求解 | T07–T09 通过；粒子账目闭合且假蒸发低于预设尾部误差预算 |
 | G3：V1 科学闭环 | 真实源、轨迹对照、内外绝对密度及收敛报告 | T10–T16 通过；至少一个完整 overlap benchmark |
@@ -226,14 +226,15 @@ flowchart LR
 - T00：为模型、单位、源/终点、角度离散、外域策略各写明选择；后续修订同步现行 Proposal，摘要记入 CHANGELOG；保持 v1 存档不变，不新增逐轮备份。明确球对称输出不包含相对太阳运动方向的角各向异性信号。
 - T01：已保存 DaMaSCUS commit、依赖 commit、补丁开关、太阳表 SHA256、编译器/MPI/配置/种子/进程数，以及当时的 CTest、最小 capture 和完整轨迹结果。后续只消费这些固定产物；不在参考仓库重跑。旧运行的固定种子只承诺相同进程数/环境下比较。
 - T02 分为四个连续子阶段：T02a 提供项目内 `SolarBackground`；T02b 按固定 obscura convention 计算全部 63 靶的 `sigma_A`、`Gamma_A=n_A sigma_A <v_rel>` 及总直接 rate；T02c 实现靶选择与条件热靶速度采样；T02d 完成显式接收 RNG 的三维单碰撞接口。该层不持有轨迹调度/快照状态，不带入 MPI、trajectory、snapshot 或参数扫描。验收时项目内 consumer 只链接 physics target 即可查询背景、rate 和单碰撞，且来源位置、许可证和有意差异可追溯。传播器继续作为只读源码依据，不在 T02 移植或重写 RK45。按本阶段约定，T02 不新增移植源与目标内容的哈希验证；T01 已登记的太阳表/运行指纹及后续 run manifest 约定保持不变。
-- T03：只导入符合 `Code/configs/validation/t03_oracle_contract.json`、在 DM-Transport 外独立生成并冻结的 legacy artifact，禁止由当前 `SolarBackground` 或直接率实现反算 golden。直接移植尽量保持抽样顺序、同输入的散射率及固定种子结果；若物理修正改变随机映射，另列修正基线并做分布检验。覆盖 `P(v_out)`、方向分布、平均能量交换、靶选择概率和 rate；验证报告分列 `reference_parity` 与 `physics_validation`，由实际速度差计算动量转移，不能以 parity 代替独立物理检查。
+- T03：验证报告固定分列 `reference_parity` 与 `physics_validation`。前者只接受符合 `Code/configs/validation/t03_oracle_contract.json`、在 DM-Transport 外独立生成并冻结的 legacy artifact，禁止由当前实现、源码公式、解析测试或 T01 小样反算 golden；当前用户规则禁止本项目构建/运行参考仓库，因此 artifact 缺失时写 `not_evaluated` 和原因，不能写 `pending` 或 `pass`。后者是必过门，覆盖 `P(v_out)`、方向与角分布、平均能量交换、动量/能量守恒、旋转对称和热浴平衡。以后若收到合规 artifact，parity 必须通过；若失败则重开 G0 并复核依赖结果。
 
-单散射开发样本可从 `1e4–1e5` 开始，阶段门使用提案建议的约 `1e6` 次/选定状态组或等效统计精度。预先规定分布检验/多重比较规则，并报告均值、区间和效应大小，不以单个 p 值或“看起来相同”验收。
+默认 CI 只运行 `ctest -L fast`，覆盖 unit/contract、确定性运动学、少量统计 smoke、随机重放与抽样顺序，目标一分钟内完成；fast 通过不能单独完成 T03。约 `1e6` 次/选定状态组或等效统计精度的角分布、热浴弱残差、尾部/收敛和可用时的 parity 属于后续手动/nightly/HPC scientific validation；当前已冻结统计与报告契约，runner 和 `validation_report.json` 生成器尚未实现。
 
 ### T04–T09：构造守恒的算符
 
 - T04：索引往返、单元体积总和、单位往返和 C++/Python 读取一致。网格不在奇点直接取值；对靠近 `v_escape(r)` 的单元设计阈值切割/子格积分。正权 r/v 求积与输出沉积规则写入 schema；初始投影泄漏、传播泄漏和真实逃逸分别诊断。
 - T05：reference 等权采样构造 `Q_coll=diag(Gamma)(P-I)`，保留自跃迁；零速率行直接为零。每条样本用稳定的 master seed、模型/网格指纹、state ID、sample ID 派生随机流，避免 `std::hash` 与 MPI rank 决定结果。固定平台、样本集合和合并次序后，1/2/4 ranks 核计数及矩阵一致；counter 后端进一步区分 sampling stage、rejection attempt 和 draw/lane，不承诺跨设备最终浮点结果逐位相同。
+- T05：核构建聚合诊断记录 `cdf_roundoff_fallback_count`；T02 保留 legacy 最后一靶兜底算法和无状态接口，不为极低概率浮点残差引入全局可变计数器。
 - T05：SD 固定模型下验证 `Gamma proportional to sigma` 与 P 的统计不变性，才允许复用 reference-sigma 核；源 C 单独随截面重算。cache key 包括质量、相互作用及耦合、靶列表、太阳表、网格/速度域、物理版本和抽样规则，错配必须拒绝加载。
 - T05/T06：按 [完整 FV 公式](Proposal.md#cell-averaging) 同时平均 `J Gamma(P-I)`，包含对角扣除；比较格心、r/v 的 `2×2` 与加密正权求积。不能分别平均 Gamma 和 P 后相乘。保持碰撞径向块结构，分别报告求积、核样本与输出核压缩误差；生产采用的离散在热浴和 near-escape 测试中均需通过预算。
 - T06：reference 的碰撞概率归一化和 Q 行和是代数守恒，应到浮点精度；MC 误差影响转移概率准确度，不能用来容忍系统性丢粒子。P04 若采用重要性采样，按性能设计逐样本保守估计生成元，区分无偏率估计与自归一概率的有限样本偏差。固定热浴比较积分后的 Maxwell–Boltzmann 单元占据和角度各向同性，随网格及核样本增加收敛。详细平衡与稳态残差分开检查，二者不等价。
@@ -310,17 +311,17 @@ P04 以粗前向/伴随 pilot 决定下一批预算或有可计算密度的 prop
 | --- | --- | --- |
 | T00 | completed | 模型、单位、状态、边界、源、代数方向和已知容差写入 mvp.json；三个未来预算分别由 T06/T07/T09 负责，并注明必须设置的验收门 |
 | T01 | completed | Git/依赖/数据/构建指纹、旧 CTest 和四个固定种子小案例已记录；选择 1e-34 cm² 作为接口回归点。它是可复现 legacy reference，不是收敛的科学 benchmark |
-| T02 | in_progress | T02a/b/c completed：冻结 AGSS09 背景和 63 靶直接率后，现按源顺序 `Gamma_A/Gamma_total` 选择核靶，并以显式 `std::mt19937` 抽取相对速度加权的条件热靶速度。零入射速度按 legacy 契约拒绝，小正速度验证解析单侧极限。T02d 三维单碰撞仍待实现；下一步只推进 T02d |
-| T03 | pending | [oracle contract](../Code/configs/validation/t03_oracle_contract.json) 已冻结独立外部 legacy artifact 的导入字段和统计摘要，但 artifact 当前 unavailable；T01 不含背景、rate 或单碰撞 golden，禁止由当前实现反向制造。artifact 可用且 T02c/d 完成后，分别报告 `reference_parity` 与 `physics_validation`，并单列 legacy GL30 parity 和分段收敛积分误差 |
+| T02 | completed | T02a–d 已形成项目内最小物理闭包：冻结 AGSS09 背景、63 靶直接率、源顺序靶选择、碰撞条件热靶速度、low-mass contact 各向同性角和非相对论两体出射速度。完整接口显式接收 `std::mt19937`，返回靶索引、靶速度与出射 DM 速度；不含轨迹、分箱、逃逸或 kernel 状态 |
+| T03 | in_progress | 快速层已覆盖来源/调用顺序、静止靶前后向极限、最大能损、移动靶动量/能量、CM 半径、旋转/Galilean 协变、角各向同性和同 seed 重放。scientific validation 尚缺多状态大样本和热浴平衡弱残差；外部 artifact 不可用，因此 `reference_parity=not_evaluated`，不会用项目结果冒充 legacy golden |
 | T04 | in_progress | C++14 网格已提供只读 faces、bounds、闭域定位、mu 最快索引和稳定相空间测度；分片常数源投影保持 particles/s 守恒。求积、逃逸阈值几何和跨语言输出 schema 尚未实现 |
 | P00 | in_progress | 基线工具已输出分命令和分案例墙钟时间；峰值内存、核构建和求解等未测字段为 null |
 
 `mvp.json` 是当前可运行参数的唯一来源，文档保留设计理由和验收条件。未确定预算必须由登记的 owner task 在对应验收前补充定义，不以默认值或零代替；这些未来门不妨碍 T00 的契约冻结完成，也不表示对应物理门已经通过。
 
-当前验证证据（2026-09-16）：本项目默认十个 CTest 已全量通过；`target_sampling` 新增合成权重、真实 63 靶、随机状态重放、错误路径，以及 `v/v_T={0.1,1,3,10}` 的条件靶速/相对速度 CDF、条件角 PIT、解析矩、旋转对称和零速单侧极限检查。这些测试包含来源派生契约与独立解析不变量，但仍不是 T03 的外部 legacy parity。初始只读参考的构建版本从 `543660f-dirty` 刷新为 `b5678f5`；旧 21 项测试中 17 项首次通过，4 项 MPI 因沙箱套接字限制失败，获批重试后通过，未把两次执行合写成一次全通过。该次 T01 基线已经保存；此后不再修改或编译参考仓库。基线验证报告（本地生成：`Output/Result/baseline/20260915-initial/validation_report.json`）
+当前验证证据（2026-09-16）：本项目十一项 `fast` CTest 已全量通过。`target_sampling` 覆盖合成权重、真实 63 靶、随机重放、错误路径，以及 `v/v_T={0.1,1,3,10}` 的条件靶速/相对速度 CDF、条件角 PIT、解析矩、旋转对称和零速单侧极限；`single_collision` 再覆盖固定角解析极限、最大能损、移动靶守恒、CM 球面、协变性、角各向同性、调用顺序及无随机消耗错误路径。这些是来源契约与独立物理 smoke，不是完整 T03 scientific validation 或外部 legacy parity。初始只读参考的构建版本从 `543660f-dirty` 刷新为 `b5678f5`；旧 21 项测试中 17 项首次通过，4 项 MPI 因沙箱套接字限制失败，获批重试后通过，未把两次执行合写成一次全通过。该次 T01 基线已经保存；此后不再修改或编译参考仓库。基线验证报告（本地生成：`Output/Result/baseline/20260915-initial/validation_report.json`）
 
 两个截面各运行 Capture/普通模式 16 次尝试：`1e-36 cm²` 均未捕获；`1e-34 cm²` 分别捕获 8/6 个，普通模式 6 个均完整蒸发，四案未报告数值失败或计算截断。实际耦合、质量/截面与二进制版本通过日志核验。此样本只支持初步运行回归，不证明概率、占据数或寿命收敛；G0/G1 尚未完成。运行来源（本地生成：`Output/Result/baseline/20260915-initial/run_manifest.json`）、计时报告（本地生成：`Output/Result/baseline/20260915-initial/performance_report.json`）
 
-当前关键路径是完成 T02d，随后开展 T03；T04 同期只补正权求积、逃逸阈值几何和稳定 schema。T03 未通过前不启动 T05 碰撞核，GPU 仍不进入这一轮。随后按 T05/T06 建立 reference collision kernel 与热浴验收，再依据 profile 开始 P02 和 P01。
+当前关键路径是完成 T03 scientific validation，尤其热浴平衡弱残差和多状态角/能量交换统计；T04 同期只补正权求积、逃逸阈值几何和稳定 schema。T03 `physics_validation` 未通过前不启动 T05 碰撞核，GPU 仍不进入这一轮。随后按 T05/T06 建立 reference collision kernel 与离散热浴验收，再依据 profile 开始 P02 和 P01。
 
 通过 G0 后，才把这些接口用于真实碰撞核。V1 的第一张科学验证图是带误差带的 **MC 与 transport 绝对径向密度**，随后是外部密度、`N/C` 与同口径驻留时间、以及完整的误差和成本报告。

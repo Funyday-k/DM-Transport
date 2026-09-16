@@ -5,9 +5,9 @@
 **项目工作名：** `SolarDM-Transport`
 **核心目标：** 从 DaMaSCUS-SUN 已有的微观散射物理出发，建立保留轨道相位的多尺度动理学输运框架，求解暗物质的绝对相空间占据数、径向数密度、蒸发通量和太阳外弱束缚分布。直接输运求解为主线，完整轨迹和受控加速轨迹提供数值验证。
 
-**维护说明（2026-09-15）：** 本稿保留原有 75 节科学路线，依据 DaMaSCUS-SUN-EVAP 源码、数值方法审阅与已核验文献，修正接口、捕获归一化、有限体积网格、边界和物理时间等约定。科学推导、工程设计与源码依据统一维护在本文；项目固定文档规则见 [README](../README.md). 原始文本逐字保存在 [初稿存档](archive/Proposal_2026-09-14_v1.md)。可执行科学任务、依赖与 G0–G6 验收以 [Task_Plan.md](Task_Plan.md) 为准；源码事实见 [源码依据附录](Proposal.md#code-reference)；后端、缓存、核结构及性能任务见 [工程与性能设计附录](Proposal.md#performance-design)。文中的 Milestone / PR 保留为路线说明，不另行改变 T / G 科学任务编号与顺序。
+**维护说明（2026-09-16）：** 本稿保留原有 75 节科学路线，依据 DaMaSCUS-SUN-EVAP 源码、数值方法审阅与已核验文献，修正接口、捕获归一化、有限体积网格、边界和物理时间等约定。科学推导、工程设计与源码依据统一维护在本文；项目固定文档规则见 [README](../README.md). 原始文本逐字保存在 [初稿存档](archive/Proposal_2026-09-14_v1.md)。可执行科学任务、依赖与 G0–G6 验收以 [Task_Plan.md](Task_Plan.md) 为准；源码事实见 [源码依据附录](Proposal.md#code-reference)；后端、缓存、核结构及性能任务见 [工程与性能设计附录](Proposal.md#performance-design)。文中的 Milestone / PR 保留为路线说明，不另行改变 T / G 科学任务编号与顺序。
 
-当前已冻结初始契约与 legacy reference，并实现有限体积几何和保守源投影基础；执行状态及证据统一见 Task_Plan。DaMaSCUS-SUN-EVAP 是严格只读素材库，全部新增代码和构建留在 DM-Transport。本稿区分已有能力与待实现能力，任何物理正确性、收敛性或性能收益都需对应验证后才能成立。V1 先闭合 CPU reference 的绝对占据与 MC 对照；optimized 后端复用同一物理和数据契约，分别验收。
+当前执行状态及证据统一见 Task_Plan。DaMaSCUS-SUN-EVAP 是严格只读素材库，全部新增代码和构建留在 DM-Transport。本稿区分已有能力与待实现能力，任何物理正确性、收敛性或性能收益都需对应验证后才能成立。V1 先闭合 CPU reference 的绝对占据与 MC 对照；optimized 后端复用同一物理和数据契约，分别验收。
 
 设计将无碰撞假蒸发、完整单元平均和源投影列为 V1 门槛；将真实返回时间落实为 T17 的延迟边界契约；将 AP、确定性 kinetic–diffusion、DDMC 列为 T18 的三个候选。WE、伴随采样及宏态约化按证据逐步启用，不要求 MVP 同时实现所有算法。新增意见及文献结论在对应章节原位更新，不新建独立审阅或性能文档。
 
@@ -449,11 +449,34 @@ CartesianVelocityCmS sample_collision_conditioned_target_velocity_cm_s(
     double temperature_K, double target_mass_GeV,
     const CartesianVelocityCmS& dm_velocity_cm_s,
     std::mt19937& rng);
+
+struct CollisionSample {
+    std::size_t target_index;
+    CartesianVelocityCmS target_velocity_cm_s;
+    CartesianVelocityCmS outgoing_dm_velocity_cm_s;
+};
+
+CollisionSample sample_sd_proton_collision(
+    const SolarBackground&, const SdProtonModel&, double radius_cm,
+    const CartesianVelocityCmS& incoming_dm_velocity_cm_s,
+    std::mt19937& rng);
 ```
 
-固定 legacy sampler 要求 `|v_chi|>0`；项目测试以小正速度验证解析单侧极限，不把它冒充零速 reference parity。相同 seed 的逐事件复现仅承诺相同 executable 与标准库；跨工具链由 T03 检查统计相容。T02d 再组合靶选择、靶速度、散射角和出射速度，不在 T02c 提前引入 `CollisionSample`。
+T02d 已按上述顺序组合完整局域碰撞。设入射 DM 和靶速度为 `v_chi,u_A`，质量为 `m_chi,m_A`，CM 速度为 `V_CM`，各向同性出射单位方向为 `n`，则
 
-本版没有独立 `Sample_Momentum_Transfer()`。T02d 的主碰撞接口将以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。文件字段按 Task_Plan 使用 `r_cm`、`v_cm_s`、`rate_s_inv` 等单位名。
+$$
+\mathbf v_\chi'=\mathbf V_{\rm CM}
++\frac{m_A}{m_\chi+m_A}
+\lvert\mathbf v_\chi-\mathbf u_A\rvert\mathbf n,
+\qquad
+\mathbf V_{\rm CM}=\frac{m_\chi\mathbf v_\chi+m_A\mathbf u_A}{m_\chi+m_A}.
+$$
+
+实现另提供确定性 `elastic_outgoing_dm_velocity_cm_s()`，使固定角极限、动量/能量守恒和旋转协变不依赖随机抽样即可验证。完整接口只返回靶索引、碰撞条件靶速度和出射 DM 速度，不含分箱、束缚/逃逸判定、trajectory 状态或 kernel 逻辑。
+
+固定 legacy sampler 要求 `|v_chi|>0`；项目测试以小正速度验证解析单侧极限，不把它冒充零速 reference parity。相同 seed 的逐事件复现仅承诺相同 executable 与标准库；跨工具链只检查统计相容。
+
+本版没有独立 `Sample_Momentum_Transfer()`。主碰撞接口以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。靶速度、能量交换、动量转移可作为后续诊断；如输出 q，应由实际碰撞前后动量差计算。文件字段按 Task_Plan 使用 `r_cm`、`v_cm_s`、`rate_s_inv` 等单位名。
 
 若保留 `cos_scattering_angle` 诊断，它必须标明是旧实现围绕入射实验室 DM 速度轴抽取的变量，不是一般运动靶标下的相对速度散射角。旧角采样和 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。low-mass 分支是显式配置开关，不是由低质量自动启用。移植先保持旧抽样映射，任何物理修正单独建立回归基线。
 
@@ -470,7 +493,7 @@ CartesianVelocityCmS sample_collision_conditioned_target_velocity_cm_s(
 DM-Transport ScatteringPhysics ──► TransportOperator
 ```
 
-T03 只导入按 [oracle contract](../Code/configs/validation/t03_oracle_contract.json) 在 DM-Transport 外独立生成并冻结的 legacy artifact；当前物理实现不得参与期望值生成。验证报告分别给出 `reference_parity` 与 `physics_validation`，两者独立判定，不能以复现 reference 代替运动学、旋转对称性和热浴检查。
+T03 只接受按 [oracle contract](../Code/configs/validation/t03_oracle_contract.json) 在 DM-Transport 外独立生成并冻结的 legacy artifact；当前物理实现不得参与期望值生成。用户规则禁止本项目构建或运行参考仓库，因此 artifact 缺失时报告仍保留 `reference_parity`，状态明确为 `not_evaluated`，不能用源码派生或解析检查冒充。`physics_validation` 是独立必过门，覆盖运动学、角分布、旋转对称性和热浴检查；具体 G0 条件由 Task_Plan 维护。
 
 目标关系是：
 
@@ -3355,7 +3378,7 @@ Identify need for AP/diffusion treatment.
 
 # 73. 当前关键实施任务
 
-T00/T01 已完成；T02 只在 DM-Transport 内移植最小背景与散射闭包，T03 随后验证 rate、靶选择、碰撞后联合分布、能量交换和轨迹统计。T04 并行补齐正权求积、逃逸阈值几何及输出 schema。完整 T03 通过前不进入 T05/T06 的 collision kernel。具体状态、证据和剩余门槛只在 [Task_Plan §8](Task_Plan.md#current-status) 维护。
+T00–T02 已完成；当前主线是 T03 scientific validation，T04 并行补齐正权求积、逃逸阈值几何及输出 schema。T03 `physics_validation` 通过前不进入 T05/T06 的 collision kernel。具体状态、证据和剩余门槛只在 [Task_Plan §8](Task_Plan.md#current-status) 维护。
 
 ---
 
@@ -3767,7 +3790,7 @@ ITMM 作为现有离线/在线与 P05 的参照，不再新增独立实施任务
 | rate 插值 | [Solar_Model.cpp:518](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L518) | 在 MPI_COMM_WORLD 上建立规则 r/v 表，速度上限固定 0.75 自然单位 | T02 不移植 MPI 建表；T05 在项目内按实际速度域另建缓存 |
 | 靶选择 | [Simulation_Trajectory.cpp:2460](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2460) | 根据各靶 rate 抽样、预分配核 rate 缓存 | T02c 已移植源顺序核靶 CDF 与显式 RNG；固定 MVP 无电子通道 |
 | 热靶速度 | [Simulation_Trajectory.cpp:2498](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2498) | 碰撞条件下的热靶速度采样 | T02c 已移植恒截面条件 sampler；零速保留为独立极限验证 |
-| 单碰撞 | [Simulation_Trajectory.cpp:2587](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2587) | 选择靶、抽靶速度、调用 obscura 角采样、修改速度 | T02 在项目内移植完整流程并显式接收 RNG；不改 legacy `Scatter` |
+| 单碰撞 | [Simulation_Trajectory.cpp:2587](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2587) | 选择靶、抽靶速度、调用 obscura 角采样、修改速度 | T02d 已在项目内移植完整局域流程并显式接收 RNG；不改 legacy `Scatter` |
 | 引力传播 | [Simulation_Trajectory.hpp:392](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L392) | Free_Particle_Propagator 已有独立类 | 作为 T07 只读算法依据；在本项目独立实现和验证 |
 | 首次捕获即停 | [Simulation_Trajectory.cpp:2698](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2698) | 散射后更新 capture state，capture mode 立即终止 | T10 在本项目移植判据并新增源输出 |
 | 最终事件 | [Simulation_Trajectory.hpp:286](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L286) | Trajectory_Result.final_event 有位置和速度 | T10 在本项目转换成 r/v/mu，并保留连续原始状态 |

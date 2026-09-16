@@ -52,6 +52,12 @@ struct SdScatteringRates {
     double total_rate_s_inv;
 };
 
+struct CollisionSample {
+    std::size_t target_index;
+    CartesianVelocityCmS target_velocity_cm_s;
+    CartesianVelocityCmS outgoing_dm_velocity_cm_s;
+};
+
 // Port of the fixed obscura SD normalization for a_n = 0.  Spin-zero targets
 // have zero cross section.  Invalid model or target metadata throws
 // std::invalid_argument; an unrepresentable result throws std::overflow_error.
@@ -86,6 +92,31 @@ CartesianVelocityCmS sample_collision_conditioned_target_velocity_cm_s(
     double temperature_K,
     double target_mass_GeV,
     const CartesianVelocityCmS& dm_velocity_cm_s,
+    std::mt19937& rng);
+
+// Nonrelativistic two-body elastic kinematics in explicit cgs velocity units.
+// outgoing_dm_cm_direction_unit is the unit direction of the outgoing dark
+// matter velocity relative to the center of mass.  This deterministic helper
+// is exposed so conservation laws and fixed-angle limits can be tested without
+// coupling them to random sampling.  Inputs must be finite, masses positive,
+// and the direction normalized to within floating-point tolerance.
+CartesianVelocityCmS elastic_outgoing_dm_velocity_cm_s(
+    double dark_matter_mass_GeV,
+    double target_mass_GeV,
+    const CartesianVelocityCmS& incoming_dm_velocity_cm_s,
+    const CartesianVelocityCmS& incoming_target_velocity_cm_s,
+    const CartesianVelocityCmS& outgoing_dm_cm_direction_unit);
+
+// Complete local collision for the fixed SD-proton, low-mass contact MVP:
+// direct 63-target rates -> source-order target -> collision-conditioned
+// thermal target velocity -> isotropic CM direction -> elastic outgoing DM
+// velocity.  The routine contains no trajectory, binning, binding-energy,
+// escape, or kernel logic.  Radius is in cm and velocities are in cm/s.
+CollisionSample sample_sd_proton_collision(
+    const SolarBackground& background,
+    const SdProtonModel& model,
+    double radius_cm,
+    const CartesianVelocityCmS& incoming_dm_velocity_cm_s,
     std::mt19937& rng);
 
 }  // namespace physics

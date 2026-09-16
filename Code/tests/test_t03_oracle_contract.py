@@ -24,7 +24,31 @@ class OracleContractTests(unittest.TestCase):
         self.assertEqual(
             self.contract["contract_id"], "legacy_golden_physics_v1")
         self.assertEqual(
-            self.contract["status"], "awaiting_independent_artifact")
+            self.contract["status"],
+            "physics_validation_in_progress_reference_parity_not_evaluated")
+        report_policy = self.contract["report_status_policy"]
+        parity_status = report_policy["reference_parity"]
+        self.assertEqual(parity_status["status"], "not_evaluated")
+        self.assertEqual(
+            parity_status["reason_code"],
+            "independent_artifact_unavailable")
+        self.assertEqual(parity_status["gate"], "conditional")
+        self.assertIn("externally produced frozen artifact",
+                      parity_status["activation_condition"])
+        self.assertEqual(
+            set(parity_status["prohibited_substitutes"]),
+            {
+                "source_derived_expected_values",
+                "project_implementation_outputs",
+                "analytic_physics_checks",
+                "t01_small_trajectory_samples",
+            },
+        )
+        physics_status = report_policy["physics_validation"]
+        self.assertEqual(physics_status["status"], "in_progress")
+        self.assertEqual(physics_status["gate"], "required")
+        self.assertTrue(physics_status["independent_of_reference_artifact"])
+        self.assertIn("reopens G0", report_policy["g0_completion_rule"])
         source = self.contract["source"]
         self.assertEqual(source["commit"], REFERENCE_COMMIT)
         self.assertEqual(
@@ -131,17 +155,47 @@ class OracleContractTests(unittest.TestCase):
         )
 
         parity = self.contract["collision_reference_parity"]
+        state_groups = parity["state_groups"]
+        fixed_target = state_groups["conditioned_target_velocity"]
+        full_chain = state_groups["full_chain"]
         self.assertEqual(
-            parity["speed_over_target_thermal_speed"],
+            fixed_target["speed_over_target_thermal_speed"],
             [0.1, 1.0, 3.0, 10.0],
         )
-        self.assertNotIn(0.0, parity["speed_over_target_thermal_speed"])
+        self.assertNotIn(
+            0.0, fixed_target["speed_over_target_thermal_speed"])
         self.assertIn("rejects non-positive", parity[
             "zero_speed_excluded_reason"])
-        self.assertEqual(parity["radius_Rsun"], [0.1, 0.5, 0.9])
-        self.assertEqual(parity["target_indices"], [0, 2, 13])
-        self.assertEqual(parity["incoming_direction_lab"], [0.0, 0.0, 1.0])
-        self.assertIn("Cartesian product", parity["state_construction"])
+        self.assertEqual(fixed_target["radius_Rsun"], [0.1, 0.5, 0.9])
+        self.assertEqual(fixed_target["target_indices"], [0, 2, 13])
+        self.assertEqual(
+            fixed_target["incoming_direction_lab"], [0.0, 0.0, 1.0])
+        self.assertIn("Cartesian product", fixed_target["state_construction"])
+        self.assertIn("externally fixed", fixed_target["state_construction"])
+        self.assertEqual(
+            fixed_target["entry_point"],
+            "sample_collision_conditioned_target_velocity_cm_s",
+        )
+        self.assertNotIn(
+            "selected_target_index", fixed_target["event_prefix_fields"])
+        self.assertEqual(
+            fixed_target["event_prefix_fields"],
+            ["target_velocity_cm_s_xyz"],
+        )
+        self.assertIn("no target-selection draw", fixed_target["target_policy"])
+        self.assertEqual(
+            full_chain["entry_point"], "sample_sd_proton_collision")
+        self.assertEqual(
+            full_chain["incoming_direction_lab"], [0.0, 0.0, 1.0])
+        self.assertIn(
+            "target_selection_reference.radius_Rsun",
+            full_chain["state_source"],
+        )
+        self.assertIn(
+            "selected_target_index", full_chain["event_prefix_fields"])
+        self.assertIn("never force", full_chain["target_policy"])
+        self.assertIn(
+            "target_selection_count", full_chain["aggregate_fields"])
         rng = parity["rng"]
         self.assertEqual(rng["engine"], "std::mt19937")
         self.assertEqual(rng["event_prefix_seed"], 20260915)
@@ -152,33 +206,17 @@ class OracleContractTests(unittest.TestCase):
             len(rng["aggregate_seeds"]),
             1_000_000,
         )
+        self.assertIn("confidence_interval", fixed_target["aggregate_fields"])
         self.assertIn("outgoing_velocity_cm_s_xyz",
-                      parity["event_prefix_fields"])
-        self.assertIn("confidence_interval", parity["aggregate_fields"])
+                      full_chain["event_prefix_fields"])
         self.assertIn("dark_matter_energy_change_eV",
                       parity["definitions"])
         for histogram in parity["histograms"].values():
             self.assertLess(histogram["minimum"], histogram["maximum"])
             self.assertGreater(histogram["bins"], 0)
             self.assertIsInstance(histogram["include_overflow"], bool)
-        t02c_subset = parity["conditioned_target_velocity_scope"]
         self.assertEqual(
-            set(t02c_subset["state_fields"]),
-            {
-                "radius_Rsun",
-                "target_index",
-                "temperature_K",
-                "target_mass_GeV",
-                "target_thermal_speed_cm_s",
-                "incoming_velocity_cm_s_xyz",
-            },
-        )
-        self.assertEqual(
-            t02c_subset["event_prefix_fields"],
-            ["target_velocity_cm_s_xyz"],
-        )
-        self.assertEqual(
-            set(t02c_subset["aggregate_fields"]),
+            set(fixed_target["aggregate_fields"]),
             {
                 "sample_count",
                 "target_speed_histogram",
@@ -187,12 +225,6 @@ class OracleContractTests(unittest.TestCase):
                 "confidence_interval",
             },
         )
-        self.assertIn("without outgoing-collision fields",
-                      t02c_subset["completion_rule"])
-        self.assertTrue(set(t02c_subset["event_prefix_fields"]).issubset(
-            set(parity["event_prefix_fields"])))
-        self.assertTrue(set(t02c_subset["aggregate_fields"]).issubset(
-            set(parity["aggregate_fields"])))
 
         physics = self.contract["collision_physics_validation"]
         self.assertEqual(
@@ -238,6 +270,32 @@ class OracleContractTests(unittest.TestCase):
         self.assertIn("not_evaluated",
                       prefix_policy["standard_library_mismatch"])
         self.assertIn("Bonferroni", comparison["histogram_interval"])
+        tiers = self.contract["execution_tiers"]
+        self.assertEqual(tiers["fast_ci"]["runner"], "ctest -L fast")
+        self.assertLessEqual(
+            tiers["fast_ci"]["target_runtime_seconds"], 60)
+        self.assertFalse(
+            tiers["fast_ci"]["may_complete_t03_physics_validation"])
+        self.assertFalse(
+            tiers["scientific_validation"]["included_in_default_ctest"])
+        self.assertEqual(
+            tiers["scientific_validation"]["runner_status"],
+            "not_implemented",
+        )
+        self.assertEqual(
+            tiers["scientific_validation"]["report_generator_status"],
+            "not_implemented",
+        )
+        self.assertEqual(
+            tiers["scientific_validation"]["intended_execution"],
+            "manual_nightly_or_hpc",
+        )
+        self.assertEqual(
+            tiers["scientific_validation"]["report_path"],
+            "Output/Result/validation/validation_report.json")
+        self.assertIn(
+            "thermal_bath_equilibrium_weak_residual",
+            tiers["scientific_validation"]["scope"])
         self.assertEqual(
             self.contract["validation_report_sections"],
             ["reference_parity", "physics_validation"],

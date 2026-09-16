@@ -22,6 +22,12 @@ constexpr unsigned long targetVelocityMaxRejectionAttempts = 10000UL;
 
 using Velocity3 = std::array<double, 3>;
 
+struct ConditionedTargetSamplerParameters {
+    double kappa;
+    Velocity3 dm_velocity_natural;
+    double y;
+};
+
 double checked_result(double speed_cm_s) {
     if (!std::isfinite(speed_cm_s)) {
         throw std::overflow_error("mean relative speed is not representable");
@@ -72,6 +78,20 @@ double vector_norm(const Velocity3& vector) {
                      vector[2] * vector[2]);
 }
 
+bool vector_is_finite(const Velocity3& vector) {
+    return std::isfinite(vector[0]) &&
+        std::isfinite(vector[1]) &&
+        std::isfinite(vector[2]);
+}
+
+Velocity3 vector_subtract(const Velocity3& left, const Velocity3& right) {
+    return Velocity3{{
+        left[0] - right[0],
+        left[1] - right[1],
+        left[2] - right[2]
+    }};
+}
+
 Velocity3 vector_cross(const Velocity3& left, const Velocity3& right) {
     return Velocity3{{
         left[1] * right[2] - left[2] * right[1],
@@ -117,6 +137,47 @@ Velocity3 unit_vector_at_angle_from_axis(double cosine,
         cosine * e3[2] + sine * cosine_phi * e1[2] +
             sine * sine_phi * e2[2]
     }};
+}
+
+ConditionedTargetSamplerParameters conditioned_target_sampler_parameters(
+    double temperature_K,
+    double target_mass_GeV,
+    const Velocity3& dm_velocity_cm_s) {
+    if (!vector_is_finite(dm_velocity_cm_s)) {
+        throw std::invalid_argument(
+            "incoming dark-matter velocity must be finite");
+    }
+    if (!std::isfinite(temperature_K) || temperature_K <= 0.0 ||
+        !std::isfinite(target_mass_GeV) || target_mass_GeV <= 0.0) {
+        throw std::invalid_argument(
+            "target-velocity sampling requires finite T > 0 and mass > 0");
+    }
+    const double temperature_GeV = legacyBoltzmannGeVPerK * temperature_K;
+    const double kappa = std::sqrt(
+        target_mass_GeV / 2.0 / temperature_GeV);
+    const Velocity3 dm_velocity_natural{{
+        dm_velocity_cm_s[0] / speedOfLightCmS,
+        dm_velocity_cm_s[1] / speedOfLightCmS,
+        dm_velocity_cm_s[2] / speedOfLightCmS
+    }};
+    const double dm_speed_natural = vector_norm(dm_velocity_natural);
+    if (!std::isfinite(kappa) || kappa <= 0.0) {
+        throw std::overflow_error(
+            "target inverse thermal speed is not representable");
+    }
+    if (!std::isfinite(dm_speed_natural) || dm_speed_natural <= 0.0) {
+        throw std::invalid_argument(
+            "legacy target-velocity sampling requires nonzero DM speed");
+    }
+    const double y = kappa * dm_speed_natural;
+    const double maximum_safe_ratio =
+        0.25 * std::sqrt(std::numeric_limits<double>::max());
+    if (!std::isfinite(y) || y <= 0.0 || y > maximum_safe_ratio) {
+        throw std::overflow_error(
+            "dimensionless incoming speed is not representable");
+    }
+    return ConditionedTargetSamplerParameters{
+        kappa, dm_velocity_natural, y};
 }
 
 void validate_sd_proton_model(const SdProtonModel& model) {
@@ -341,41 +402,13 @@ std::array<double, 3> sample_collision_conditioned_target_velocity_cm_s(
     double target_mass_GeV,
     const std::array<double, 3>& dm_velocity_cm_s,
     std::mt19937& rng) {
-    for (double component : dm_velocity_cm_s) {
-        if (!std::isfinite(component)) {
-            throw std::invalid_argument(
-                "incoming dark-matter velocity must be finite");
-        }
-    }
-    if (!std::isfinite(temperature_K) || temperature_K <= 0.0 ||
-        !std::isfinite(target_mass_GeV) || target_mass_GeV <= 0.0) {
-        throw std::invalid_argument(
-            "target-velocity sampling requires finite T > 0 and mass > 0");
-    }
-    const double temperature_GeV = legacyBoltzmannGeVPerK * temperature_K;
-    const double kappa = std::sqrt(
-        target_mass_GeV / 2.0 / temperature_GeV);
-    const Velocity3 dm_velocity_natural{{
-        dm_velocity_cm_s[0] / speedOfLightCmS,
-        dm_velocity_cm_s[1] / speedOfLightCmS,
-        dm_velocity_cm_s[2] / speedOfLightCmS
-    }};
-    const double dm_speed_natural = vector_norm(dm_velocity_natural);
-    if (!std::isfinite(kappa) || kappa <= 0.0) {
-        throw std::overflow_error(
-            "target inverse thermal speed is not representable");
-    }
-    if (!std::isfinite(dm_speed_natural) || dm_speed_natural <= 0.0) {
-        throw std::invalid_argument(
-            "legacy target-velocity sampling requires nonzero DM speed");
-    }
-    const double y = kappa * dm_speed_natural;
-    const double maximum_safe_ratio =
-        0.25 * std::sqrt(std::numeric_limits<double>::max());
-    if (!std::isfinite(y) || y <= 0.0 || y > maximum_safe_ratio) {
-        throw std::overflow_error(
-            "dimensionless incoming speed is not representable");
-    }
+    const ConditionedTargetSamplerParameters parameters =
+        conditioned_target_sampler_parameters(
+            temperature_K, target_mass_GeV, dm_velocity_cm_s);
+    const double kappa = parameters.kappa;
+    const Velocity3& dm_velocity_natural =
+        parameters.dm_velocity_natural;
+    const double y = parameters.y;
 
     // Romano-Walsh rejection sampler as used by the fixed reference.  Keep
     // the initial x=y, mu=1 sentinel because its failed acceptance draw is
@@ -451,6 +484,164 @@ std::array<double, 3> sample_collision_conditioned_target_velocity_cm_s(
             "sampled target velocity is not representable");
     }
     return velocity;
+}
+
+std::array<double, 3> elastic_outgoing_dm_velocity_cm_s(
+    double dark_matter_mass_GeV,
+    double target_mass_GeV,
+    const std::array<double, 3>& incoming_dm_velocity_cm_s,
+    const std::array<double, 3>& incoming_target_velocity_cm_s,
+    const std::array<double, 3>& outgoing_dm_cm_direction_unit) {
+    if (!std::isfinite(dark_matter_mass_GeV) ||
+        dark_matter_mass_GeV <= 0.0 ||
+        !std::isfinite(target_mass_GeV) || target_mass_GeV <= 0.0 ||
+        !vector_is_finite(incoming_dm_velocity_cm_s) ||
+        !vector_is_finite(incoming_target_velocity_cm_s) ||
+        !vector_is_finite(outgoing_dm_cm_direction_unit)) {
+        throw std::invalid_argument(
+            "elastic kinematics requires finite velocities and positive masses");
+    }
+    const double direction_norm =
+        vector_norm(outgoing_dm_cm_direction_unit);
+    if (!std::isfinite(direction_norm) || direction_norm <= 0.0 ||
+        std::fabs(direction_norm - 1.0) > 1.0e-12) {
+        throw std::invalid_argument(
+            "outgoing center-of-mass direction must be a unit vector");
+    }
+    const double total_mass_GeV =
+        dark_matter_mass_GeV + target_mass_GeV;
+    if (!std::isfinite(total_mass_GeV) || total_mass_GeV <= 0.0) {
+        throw std::overflow_error("collision total mass is not representable");
+    }
+
+    // Follow the reference evaluation in natural velocity units, then expose
+    // the result in cm/s.  The direction is the outgoing DM direction in the
+    // center-of-mass frame; its magnitude is fixed by elastic kinematics.
+    const Velocity3 dm_velocity_natural{{
+        incoming_dm_velocity_cm_s[0] / speedOfLightCmS,
+        incoming_dm_velocity_cm_s[1] / speedOfLightCmS,
+        incoming_dm_velocity_cm_s[2] / speedOfLightCmS
+    }};
+    const Velocity3 target_velocity_natural{{
+        incoming_target_velocity_cm_s[0] / speedOfLightCmS,
+        incoming_target_velocity_cm_s[1] / speedOfLightCmS,
+        incoming_target_velocity_cm_s[2] / speedOfLightCmS
+    }};
+    const double relative_speed_natural = vector_norm(
+        vector_subtract(target_velocity_natural, dm_velocity_natural));
+    if (!std::isfinite(relative_speed_natural)) {
+        throw std::overflow_error(
+            "collision relative speed is not representable");
+    }
+    const double outgoing_cm_speed_natural =
+        target_mass_GeV * relative_speed_natural / total_mass_GeV;
+    if (!std::isfinite(outgoing_cm_speed_natural)) {
+        throw std::overflow_error(
+            "outgoing center-of-mass speed is not representable");
+    }
+
+    Velocity3 outgoing_velocity_cm_s{{}};
+    for (std::size_t component = 0; component < 3; ++component) {
+        const double center_of_mass_velocity_natural =
+            (dark_matter_mass_GeV * dm_velocity_natural[component] +
+             target_mass_GeV * target_velocity_natural[component]) /
+            total_mass_GeV;
+        const double outgoing_velocity_natural =
+            outgoing_cm_speed_natural *
+                outgoing_dm_cm_direction_unit[component] +
+            center_of_mass_velocity_natural;
+        outgoing_velocity_cm_s[component] =
+            outgoing_velocity_natural * speedOfLightCmS;
+    }
+    if (!vector_is_finite(outgoing_velocity_cm_s) ||
+        !std::isfinite(vector_norm(outgoing_velocity_cm_s))) {
+        throw std::overflow_error(
+            "outgoing dark-matter velocity is not representable");
+    }
+    return outgoing_velocity_cm_s;
+}
+
+CollisionSample sample_sd_proton_collision(
+    const SolarBackground& background,
+    const SdProtonModel& model,
+    double radius_cm,
+    const std::array<double, 3>& incoming_dm_velocity_cm_s,
+    std::mt19937& rng) {
+    validate_sd_proton_model(model);
+    if (!std::isfinite(radius_cm) || radius_cm < 0.0 ||
+        radius_cm > background.solar_radius_cm() ||
+        !vector_is_finite(incoming_dm_velocity_cm_s)) {
+        throw std::invalid_argument(
+            "collision requires an interior finite radius and velocity");
+    }
+    const Velocity3 incoming_dm_velocity_natural{{
+        incoming_dm_velocity_cm_s[0] / speedOfLightCmS,
+        incoming_dm_velocity_cm_s[1] / speedOfLightCmS,
+        incoming_dm_velocity_cm_s[2] / speedOfLightCmS
+    }};
+    const double incoming_dm_speed_natural =
+        vector_norm(incoming_dm_velocity_natural);
+    if (!std::isfinite(incoming_dm_speed_natural) ||
+        incoming_dm_speed_natural <= 0.0) {
+        throw std::invalid_argument(
+            "collision requires a finite, positive incoming DM speed");
+    }
+    const double incoming_dm_speed_cm_s =
+        incoming_dm_speed_natural * speedOfLightCmS;
+    if (!std::isfinite(incoming_dm_speed_cm_s)) {
+        throw std::overflow_error(
+            "incoming dark-matter speed is not representable");
+    }
+
+    const SdScatteringRates rates = direct_sd_proton_scattering_rates(
+        background, model, radius_cm, incoming_dm_speed_cm_s);
+    if (rates.total_rate_s_inv <= 0.0) {
+        throw std::domain_error(
+            "a nuclear target cannot be sampled from a nonpositive total rate");
+    }
+    const double temperature_K = background.temperature_K(radius_cm);
+    double maximum_target_mass_GeV = 0.0;
+    for (const SdTargetScatteringRate& rate : rates.target_rates) {
+        // The source-order selector assigns any cumulative roundoff residue to
+        // its final entry, even when that entry has zero physical rate.  Check
+        // the heaviest of all targets because y grows monotonically as sqrt(m_A).
+        maximum_target_mass_GeV = std::max(
+            maximum_target_mass_GeV,
+            background.target(rate.target_index).mass_GeV);
+    }
+    conditioned_target_sampler_parameters(
+        temperature_K, maximum_target_mass_GeV,
+        incoming_dm_velocity_cm_s);
+    const std::size_t target_index =
+        sample_sd_proton_target_index(rates, rng);
+    const SolarTarget& target = background.target(target_index);
+    const Velocity3 target_velocity_cm_s =
+        sample_collision_conditioned_target_velocity_cm_s(
+            temperature_K, target.mass_GeV,
+            incoming_dm_velocity_cm_s, rng);
+
+    // The low-mass contact SD law draws cos(alpha) uniformly.  Retain the
+    // reference lab-velocity axis for exact draw-order compatibility.  Since
+    // cos(alpha) and phi span the sphere uniformly, this is physically
+    // equivalent to using the incoming relative-velocity axis for this MVP;
+    // anisotropic interactions must define that CM axis explicitly.
+    const double scattering_angle_cosine =
+        2.0 * sample_uniform(rng, 0.0, 1.0) - 1.0;
+    const double phi = sample_uniform(rng, 0.0, 2.0 * std::acos(-1.0));
+    const Velocity3 outgoing_dm_cm_direction_unit =
+        unit_vector_at_angle_from_axis(
+            scattering_angle_cosine, phi, incoming_dm_velocity_natural);
+    const Velocity3 outgoing_dm_velocity_cm_s =
+        elastic_outgoing_dm_velocity_cm_s(
+            model.dark_matter_mass_GeV, target.mass_GeV,
+            incoming_dm_velocity_cm_s, target_velocity_cm_s,
+            outgoing_dm_cm_direction_unit);
+
+    return CollisionSample{
+        target_index,
+        target_velocity_cm_s,
+        outgoing_dm_velocity_cm_s
+    };
 }
 
 }  // namespace physics

@@ -46,9 +46,11 @@ SOURCES = {
     "trajectory_collision_sampling": (
         "damascus_sun_evap", "src/Simulation_Trajectory.cpp", {
             "target_velocity_rejection_limit": (51, 51),
-            "positive_uniform_and_direction_helpers": (146, 171),
+            "positive_uniform_and_direction_helpers": (141, 171),
             "source_order_target_selection": (2460, 2496),
             "collision_conditioned_target_velocity": (2498, 2564),
+            "elastic_outgoing_dm_velocity": (2566, 2585),
+            "full_collision_call_order": (2587, 2608),
         }),
     "nuclear_target_model": (
         "obscura", "src/Target_Nucleus.cpp", {
@@ -65,6 +67,7 @@ SOURCES = {
             "sigma_proton": (205, 209),
             "spin_dependent_construction_and_constant_cross_section":
                 (508, 547),
+            "low_mass_contact_scattering_angle": (580, 588),
         }),
     "steffen_interpolation": (
         "libphysica", "src/Numerics.cpp", {
@@ -74,6 +77,9 @@ SOURCES = {
     "gauss_legendre_integration": (
         "libphysica", "src/Integration.cpp",
         {"gauss_legendre_30": (95, 107)}),
+    "legacy_random_sampling": (
+        "libphysica", "src/Statistics.cpp",
+        {"fresh_uniform_distribution": (272, 275)}),
     "legacy_natural_units": (
         "libphysica", "src/Natural_Units.cpp", {
             "mass_and_length_units": (38, 63),
@@ -132,6 +138,16 @@ PORT_FRAGMENTS = {
         "positive_uniform_and_direction_helpers",
         "source_order_target_selection",
         "collision_conditioned_target_velocity",
+        "fresh_uniform_distribution",
+        "mass_and_length_units",
+        "time_and_temperature_units",
+    },
+    "single_collision_sampling": {
+        "positive_uniform_and_direction_helpers",
+        "elastic_outgoing_dm_velocity",
+        "full_collision_call_order",
+        "low_mass_contact_scattering_angle",
+        "fresh_uniform_distribution",
         "mass_and_length_units",
         "time_and_temperature_units",
     },
@@ -155,6 +171,10 @@ DESTINATIONS = {
         "Code/include/transport/physics/ScatteringPhysics.hpp",
         "Code/src/physics/ScatteringPhysics.cpp",
     },
+    "single_collision_sampling": {
+        "Code/include/transport/physics/ScatteringPhysics.hpp",
+        "Code/src/physics/ScatteringPhysics.cpp",
+    },
 }
 DIFFERENCE_CATEGORIES = {
     "mean_relative_speed": {"units", "scope", "validation"},
@@ -167,6 +187,9 @@ DIFFERENCE_CATEGORIES = {
         "validation_and_domain",
     },
     "target_and_velocity_sampling": {
+        "units", "model_scope", "rng_interface", "validation_and_errors",
+    },
+    "single_collision_sampling": {
         "units", "model_scope", "rng_interface", "validation_and_errors",
     },
 }
@@ -189,6 +212,13 @@ PRESERVED_BEHAVIORS = {
         "collision_conditioned_maxwell",
         "legacy_draw_rejection_order",
         "positive_speed_support",
+    },
+    "single_collision_sampling": {
+        "full_collision_draw_order",
+        "isotropic_contact_angle",
+        "legacy_lab_axis_basis",
+        "elastic_cm_update",
+        "natural_velocity_evaluation",
     },
 }
 EXCLUSIONS = {

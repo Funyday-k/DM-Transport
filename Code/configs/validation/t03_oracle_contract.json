@@ -1,7 +1,27 @@
 {
   "schema_version": 1,
   "contract_id": "legacy_golden_physics_v1",
-  "status": "awaiting_independent_artifact",
+  "status": "physics_validation_in_progress_reference_parity_not_evaluated",
+  "report_status_policy": {
+    "reference_parity": {
+      "status": "not_evaluated",
+      "reason_code": "independent_artifact_unavailable",
+      "gate": "conditional",
+      "activation_condition": "Evaluate and require a pass only when a conforming externally produced frozen artifact is supplied.",
+      "prohibited_substitutes": [
+        "source_derived_expected_values",
+        "project_implementation_outputs",
+        "analytic_physics_checks",
+        "t01_small_trajectory_samples"
+      ]
+    },
+    "physics_validation": {
+      "status": "in_progress",
+      "gate": "required",
+      "independent_of_reference_artifact": true
+    },
+    "g0_completion_rule": "Physics validation must pass. If a conforming independent artifact exists, reference parity must also pass; otherwise the report retains reference_parity=not_evaluated with its reason and G0 records that limitation. A later parity failure reopens G0 and invalidates dependent acceptance until reviewed."
+  },
   "source": {
     "repository": "https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP.git",
     "commit": "b5678f5b193aa567ca10715c2a6c764c9e72eec7",
@@ -74,11 +94,53 @@
     ]
   },
   "collision_reference_parity": {
-    "radius_Rsun": [0.1, 0.5, 0.9],
-    "target_indices": [0, 2, 13],
-    "incoming_direction_lab": [0.0, 0.0, 1.0],
-    "speed_over_target_thermal_speed": [0.1, 1.0, 3.0, 10.0],
-    "state_construction": "Use the Cartesian product of radius, fixed target index, and positive speed ratio with the declared incoming direction.",
+    "state_groups": {
+      "conditioned_target_velocity": {
+        "radius_Rsun": [0.1, 0.5, 0.9],
+        "target_indices": [0, 2, 13],
+        "incoming_direction_lab": [0.0, 0.0, 1.0],
+        "speed_over_target_thermal_speed": [0.1, 1.0, 3.0, 10.0],
+        "state_construction": "Use the Cartesian product of radius, externally fixed target index, and positive speed ratio with the declared incoming direction.",
+        "entry_point": "sample_collision_conditioned_target_velocity_cm_s",
+        "target_policy": "The target index is an input to component comparisons; no target-selection draw occurs and selected_target_index is not reported.",
+        "event_prefix_fields": [
+          "target_velocity_cm_s_xyz"
+        ],
+        "aggregate_fields": [
+          "sample_count",
+          "target_speed_histogram",
+          "relative_speed_histogram",
+          "target_angle_histogram",
+          "confidence_interval"
+        ]
+      },
+      "full_chain": {
+        "state_source": "Use the Cartesian product of target_selection_reference.radius_Rsun and target_selection_reference.speed_over_c with the declared incoming direction.",
+        "incoming_direction_lab": [0.0, 0.0, 1.0],
+        "entry_point": "sample_sd_proton_collision",
+        "target_policy": "Sample the target from all 63 source-order rates; never force a target index in a full-chain comparison.",
+        "event_prefix_fields": [
+          "selected_target_index",
+          "target_velocity_cm_s_xyz",
+          "outgoing_velocity_cm_s_xyz",
+          "outgoing_speed_cm_s",
+          "outgoing_lab_angle_cosine",
+          "dark_matter_energy_change_eV"
+        ],
+        "aggregate_fields": [
+          "sample_count",
+          "target_selection_count",
+          "target_speed_histogram",
+          "relative_speed_histogram",
+          "target_angle_histogram",
+          "outgoing_speed_histogram",
+          "outgoing_lab_angle_histogram",
+          "mean_dark_matter_energy_change_eV",
+          "sample_standard_error",
+          "confidence_interval"
+        ]
+      }
+    },
     "zero_speed_excluded_reason": "The fixed legacy target-velocity sampler rejects non-positive incoming DM speed.",
     "rng": {
       "engine": "std::mt19937",
@@ -89,25 +151,6 @@
       "mpi_ranks": 1,
       "distribution_implementation": "Record the producer compiler and C++ standard-library identity."
     },
-    "event_prefix_fields": [
-      "selected_target_index",
-      "target_velocity_cm_s_xyz",
-      "outgoing_velocity_cm_s_xyz",
-      "outgoing_speed_cm_s",
-      "outgoing_lab_angle_cosine",
-      "dark_matter_energy_change_eV"
-    ],
-    "aggregate_fields": [
-      "sample_count",
-      "target_speed_histogram",
-      "relative_speed_histogram",
-      "target_angle_histogram",
-      "outgoing_speed_histogram",
-      "outgoing_lab_angle_histogram",
-      "mean_dark_matter_energy_change_eV",
-      "sample_standard_error",
-      "confidence_interval"
-    ],
     "definitions": {
       "target_thermal_speed": "sqrt(2 k_B T / m_A)",
       "target_angle_cosine": "dot(v_chi,u_A)/(|v_chi||u_A|) for nonzero vectors",
@@ -145,27 +188,6 @@
         "bins": 80,
         "include_overflow": false
       }
-    },
-    "conditioned_target_velocity_scope": {
-      "state_fields": [
-        "radius_Rsun",
-        "target_index",
-        "temperature_K",
-        "target_mass_GeV",
-        "target_thermal_speed_cm_s",
-        "incoming_velocity_cm_s_xyz"
-      ],
-      "event_prefix_fields": [
-        "target_velocity_cm_s_xyz"
-      ],
-      "aggregate_fields": [
-        "sample_count",
-        "target_speed_histogram",
-        "relative_speed_histogram",
-        "target_angle_histogram",
-        "confidence_interval"
-      ],
-      "completion_rule": "T02c may be assessed without outgoing-collision fields; those belong to T02d."
     }
   },
   "collision_physics_validation": {
@@ -202,6 +224,32 @@
     "mean_interval": "normal interval using 1.96 times the sample standard error",
     "histogram_interval": "Wilson score interval per bin with Bonferroni correction across reported bins",
     "acceptance": "Apply deterministic tolerances to scalar and event-prefix comparisons; require each producer-minus-project statistical difference to be consistent with zero under the declared combined uncertainty and multiple-comparison correction."
+  },
+  "execution_tiers": {
+    "fast_ci": {
+      "runner": "ctest -L fast",
+      "target_runtime_seconds": 60,
+      "scope": [
+        "unit_contract_and_error_paths",
+        "deterministic_elastic_kinematics",
+        "small_statistical_smoke",
+        "same_seed_replay_and_draw_order"
+      ],
+      "may_complete_t03_physics_validation": false
+    },
+    "scientific_validation": {
+      "runner_status": "not_implemented",
+      "intended_execution": "manual_nightly_or_hpc",
+      "report_generator_status": "not_implemented",
+      "included_in_default_ctest": false,
+      "report_path": "Output/Result/validation/validation_report.json",
+      "scope": [
+        "declared_million_scale_reference_comparisons_when_available",
+        "multi_state_scattering_angle_and_energy_transfer",
+        "thermal_bath_equilibrium_weak_residual",
+        "tail_and_convergence_checks"
+      ]
+    }
   },
   "validation_report_sections": [
     "reference_parity",

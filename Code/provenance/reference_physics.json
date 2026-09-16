@@ -113,7 +113,7 @@
         },
         {
           "id": "positive_uniform_and_direction_helpers",
-          "start_line": 146,
+          "start_line": 141,
           "end_line": 171
         },
         {
@@ -125,6 +125,16 @@
           "id": "collision_conditioned_target_velocity",
           "start_line": 2498,
           "end_line": 2564
+        },
+        {
+          "id": "elastic_outgoing_dm_velocity",
+          "start_line": 2566,
+          "end_line": 2585
+        },
+        {
+          "id": "full_collision_call_order",
+          "start_line": 2587,
+          "end_line": 2608
         }
       ]
     },
@@ -181,6 +191,11 @@
           "id": "spin_dependent_construction_and_constant_cross_section",
           "start_line": 508,
           "end_line": 547
+        },
+        {
+          "id": "low_mass_contact_scattering_angle",
+          "start_line": 580,
+          "end_line": 588
         }
       ]
     },
@@ -210,6 +225,18 @@
           "id": "gauss_legendre_30",
           "start_line": 95,
           "end_line": 107
+        }
+      ]
+    },
+    {
+      "id": "legacy_random_sampling",
+      "upstream_id": "libphysica",
+      "path": "src/Statistics.cpp",
+      "fragments": [
+        {
+          "id": "fresh_uniform_distribution",
+          "start_line": 272,
+          "end_line": 275
         }
       ]
     },
@@ -430,6 +457,7 @@
         "positive_uniform_and_direction_helpers",
         "source_order_target_selection",
         "collision_conditioned_target_velocity",
+        "fresh_uniform_distribution",
         "mass_and_length_units",
         "time_and_temperature_units"
       ],
@@ -479,6 +507,70 @@
         {
           "id": "positive_speed_support",
           "description": "The collision-conditioned sampler retains the reference domain of strictly positive incoming dark-matter speed; the zero-speed analytic limit is validated separately rather than sampled through this API."
+        }
+      ]
+    },
+    {
+      "id": "single_collision_sampling",
+      "derived_from": [
+        "positive_uniform_and_direction_helpers",
+        "elastic_outgoing_dm_velocity",
+        "full_collision_call_order",
+        "low_mass_contact_scattering_angle",
+        "fresh_uniform_distribution",
+        "mass_and_length_units",
+        "time_and_temperature_units"
+      ],
+      "destinations": [
+        {
+          "path": "Code/include/transport/physics/ScatteringPhysics.hpp"
+        },
+        {
+          "path": "Code/src/physics/ScatteringPhysics.cpp"
+        }
+      ],
+      "intentional_differences": [
+        {
+          "category": "units",
+          "description": "The project API accepts and returns Cartesian velocities in cm/s while reproducing the reference arithmetic in natural velocity units internally.",
+          "behavior_change": false
+        },
+        {
+          "category": "model_scope",
+          "description": "The complete collision interface is restricted to the fixed 0.1 GeV low-mass, constant-contact SD-proton nuclear MVP and has no electron or generic form-factor branch.",
+          "behavior_change": false
+        },
+        {
+          "category": "rng_interface",
+          "description": "The stateless collision and its component samplers receive one explicit std::mt19937 reference instead of using Trajectory_Simulator-owned random state.",
+          "behavior_change": false
+        },
+        {
+          "category": "validation_and_errors",
+          "description": "Invalid model, radius, velocity, mass, direction, and zero-rate inputs raise standard exceptions; the complete API rejects deterministic invalid inputs before consuming random state.",
+          "behavior_change": true
+        }
+      ],
+      "preserved_behaviors": [
+        {
+          "id": "full_collision_draw_order",
+          "description": "One shared engine is consumed in the reference order: target selection, conditioned target velocity, low-mass contact scattering cosine, then outgoing azimuth."
+        },
+        {
+          "id": "isotropic_contact_angle",
+          "description": "The low-mass SD contact branch maps one uniform variate to a cosine uniformly distributed on [-1,1] and one azimuth to [0,2 pi)."
+        },
+        {
+          "id": "legacy_lab_axis_basis",
+          "description": "The outgoing CM direction uses the stable reference basis about the incoming laboratory DM velocity; this is distribution-equivalent to any axis only for the isotropic MVP law."
+        },
+        {
+          "id": "elastic_cm_update",
+          "description": "The outgoing DM velocity is the center-of-mass velocity plus m_A/(m_chi+m_A) times the incoming relative speed in the sampled unit direction."
+        },
+        {
+          "id": "natural_velocity_evaluation",
+          "description": "Cartesian cgs inputs are converted componentwise to c=1 velocities before the reference elastic expression is evaluated and are converted back afterward."
         }
       ]
     }

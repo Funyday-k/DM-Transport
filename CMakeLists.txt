@@ -84,6 +84,16 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
   set_tests_properties(target_sampling PROPERTIES TIMEOUT 30)
 
+  add_executable(test_single_collision
+    Code/tests/test_single_collision.cpp)
+  target_link_libraries(test_single_collision
+    PRIVATE transport_reference_physics)
+  add_test(NAME single_collision
+    COMMAND test_single_collision
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
+  set_tests_properties(single_collision PROPERTIES TIMEOUT 30)
+
   find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
   add_test(NAME project_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_project_contract.py)
@@ -99,4 +109,18 @@ if(BUILD_TESTING)
     COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_t03_oracle_contract.py)
   set_tests_properties(t03_oracle_contract PROPERTIES TIMEOUT 10)
+
+  set_tests_properties(
+    phase_space_grid
+    phase_space_projector
+    scattering_physics
+    solar_background
+    scattering_rate
+    target_sampling
+    single_collision
+    project_contract
+    baseline_contract
+    reference_physics_provenance
+    t03_oracle_contract
+    PROPERTIES LABELS fast)
 endif()

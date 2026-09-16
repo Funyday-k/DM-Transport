@@ -15,6 +15,9 @@ namespace {
 using transport::CellQuadrature;
 using transport::CellQuadratureOrder;
 using transport::EscapeThresholdClass;
+using transport::EscapeThresholdMeasure;
+using transport::EscapeThresholdQuadrature;
+using transport::EscapeThresholdSide;
 using transport::PhaseSpaceGrid;
 using transport::physics::SolarBackground;
 
@@ -248,6 +251,278 @@ void test_escape_threshold(const SolarBackground& background) {
     }, "invalid speed cell index");
 }
 
+double quadrature_weight(const EscapeThresholdQuadrature& rule) {
+    double sum = 0.0;
+    for (const auto& node : rule.nodes) {
+        require(std::isfinite(node.weight) && node.weight > 0.0,
+                "conditional quadrature weights are positive");
+        sum += node.weight;
+    }
+    return sum;
+}
+
+void check_conditional_rule(const PhaseSpaceGrid& grid,
+                            const EscapeThresholdQuadrature& rule,
+                            EscapeThresholdSide side,
+                            const transport::EscapeSpeedEvaluator& escape) {
+    const auto bounds = grid.cell_bounds(0);
+    const double expected = side == EscapeThresholdSide::bound ?
+        rule.measure.bound_fraction : rule.measure.unbound_fraction;
+    const double actual = quadrature_weight(rule);
+    require_close(actual, expected,
+                  "conditional nodes reproduce side fraction", 2.0e-13);
+    if (expected > 0.0 && expected < 1.0e-10) {
+        require(std::abs(actual / expected - 1.0) < 1.0e-12,
+                "tiny conditional weight agrees with tiny side fraction");
+    }
+    for (const auto& node : rule.nodes) {
+        require(node.r_cm >= bounds.r_cm[0] && node.r_cm <= bounds.r_cm[1],
+                "conditional radius in original global cell");
+        require(node.v_cm_s >= bounds.v_cm_s[0] &&
+                node.v_cm_s <= bounds.v_cm_s[1],
+                "conditional speed in original global cell");
+        require(node.mu >= bounds.mu[0] && node.mu <= bounds.mu[1],
+                "conditional mu in original global cell");
+        const double escape_here = escape(node.r_cm);
+        require(side == EscapeThresholdSide::bound ?
+                    node.v_cm_s <= escape_here :
+                    node.v_cm_s >= escape_here,
+                "conditional node remains on requested energy side");
+    }
+}
+
+void test_constant_escape_subcell() {
+    const PhaseSpaceGrid grid({1.0, 2.0}, {2.0, 4.0}, {-1.0, 1.0});
+    const transport::EscapeSpeedEvaluator escape = [](double) { return 3.0; };
+    const EscapeThresholdMeasure measure =
+        transport::threshold_cell_measure(grid, 0, 0, escape);
+    const double expected_bound = (27.0 - 8.0) / (64.0 - 8.0);
+    require(measure.classification == EscapeThresholdClass::threshold_crossing,
+            "constant threshold inside speed cell crosses it");
+    require_close(measure.bound_fraction, expected_bound,
+                  "constant escape analytic bound fraction", 2.0e-15);
+    require_close(measure.unbound_fraction, 1.0 - expected_bound,
+                  "constant escape analytic unbound fraction", 2.0e-15);
+    require(measure.estimated_absolute_error <= 1.0e-12,
+            "constant escape converges without estimated quadrature error");
+    const auto bound = transport::conditional_escape_threshold_quadrature(
+        grid, 0, EscapeThresholdSide::bound, escape);
+    const auto unbound = transport::conditional_escape_threshold_quadrature(
+        grid, 0, EscapeThresholdSide::unbound, escape);
+    check_conditional_rule(grid, bound, EscapeThresholdSide::bound, escape);
+    check_conditional_rule(grid, unbound, EscapeThresholdSide::unbound, escape);
+    require_close(quadrature_weight(bound) + quadrature_weight(unbound), 1.0,
+                  "conditional rules partition full cell measure", 2.0e-15);
+    double bound_y_moment = 0.0;
+    double unbound_y_moment = 0.0;
+    for (const auto& node : bound.nodes) {
+        bound_y_moment += node.weight * std::pow(node.v_cm_s, 3);
+    }
+    for (const auto& node : unbound.nodes) {
+        unbound_y_moment += node.weight * std::pow(node.v_cm_s, 3);
+    }
+    require_close(bound_y_moment / measure.bound_fraction, 17.5,
+                  "bound conditional y mean", 2.0e-14);
+    require_close(unbound_y_moment / measure.unbound_fraction, 45.5,
+                  "unbound conditional y mean", 2.0e-14);
+}
+
+void test_near_face_subcell() {
+    const PhaseSpaceGrid grid({1.0, 2.0}, {2.0, 4.0}, {-1.0, 1.0});
+    const double lower_near = std::nextafter(2.0, 4.0);
+    const double upper_near = std::nextafter(4.0, 2.0);
+    const transport::EscapeSpeedEvaluator lower_escape =
+        [lower_near](double) { return lower_near; };
+    const transport::EscapeSpeedEvaluator upper_escape =
+        [upper_near](double) { return upper_near; };
+    const auto lower = transport::threshold_cell_measure(
+        grid, 0, 0, lower_escape);
+    const auto upper = transport::threshold_cell_measure(
+        grid, 0, 0, upper_escape);
+    require(lower.bound_fraction > 0.0 && lower.bound_fraction < 1.0e-14,
+            "near lower face retains positive tiny bound measure");
+    require(upper.unbound_fraction > 0.0 &&
+            upper.unbound_fraction < 1.0e-14,
+            "near upper face retains positive tiny unbound measure");
+    require_close(lower.bound_fraction + lower.unbound_fraction, 1.0,
+                  "near lower face fractions sum to one", 0.0);
+    require_close(upper.bound_fraction + upper.unbound_fraction, 1.0,
+                  "near upper face fractions sum to one", 0.0);
+    const auto lower_rule = transport::conditional_escape_threshold_quadrature(
+        grid, 0, EscapeThresholdSide::bound, lower_escape);
+    const auto upper_rule = transport::conditional_escape_threshold_quadrature(
+        grid, 0, EscapeThresholdSide::unbound, upper_escape);
+    require(!lower_rule.nodes.empty() && !upper_rule.nodes.empty(),
+            "near-face positive slivers retain quadrature nodes");
+    check_conditional_rule(grid, lower_rule, EscapeThresholdSide::bound,
+                           lower_escape);
+    check_conditional_rule(grid, upper_rule, EscapeThresholdSide::unbound,
+                           upper_escape);
+    const auto fully_unbound = transport::threshold_cell_measure(
+        grid, 0, 0,
+        transport::EscapeSpeedEvaluator([](double) { return 2.0; }));
+    const auto fully_bound = transport::threshold_cell_measure(
+        grid, 0, 0,
+        transport::EscapeSpeedEvaluator([](double) { return 4.0; }));
+    require(fully_unbound.unbound_fraction == 1.0 &&
+            fully_bound.bound_fraction == 1.0,
+            "face-touching cells retain exact pure-side measure");
+    const double thin_middle = std::nextafter(2.0, 3.0);
+    const double thin_upper = std::nextafter(thin_middle, 3.0);
+    const PhaseSpaceGrid thin_grid({1.0, 2.0},
+                                    {2.0, thin_upper}, {-1.0, 1.0});
+    const auto thin = transport::threshold_cell_measure(
+        thin_grid, 0, 0,
+        transport::EscapeSpeedEvaluator(
+            [thin_middle](double) { return thin_middle; }));
+    require(std::abs(thin.bound_fraction - 0.5) < 2.0e-15 &&
+            std::abs(thin.unbound_fraction - 0.5) < 2.0e-15,
+            "two-ULP speed cell retains both subcell measures");
+    const transport::EscapeSpeedEvaluator thin_escape =
+        [thin_middle](double) { return thin_middle; };
+    check_conditional_rule(thin_grid,
+        transport::conditional_escape_threshold_quadrature(
+            thin_grid, 0, EscapeThresholdSide::bound, thin_escape),
+        EscapeThresholdSide::bound, thin_escape);
+    check_conditional_rule(thin_grid,
+        transport::conditional_escape_threshold_quadrature(
+            thin_grid, 0, EscapeThresholdSide::unbound, thin_escape),
+        EscapeThresholdSide::unbound, thin_escape);
+    require_throws<std::invalid_argument>([&] {
+        transport::threshold_cell_measure(
+            grid, 0, 0, transport::EscapeSpeedEvaluator{});
+    }, "empty escape evaluator");
+    require_throws<std::invalid_argument>([&] {
+        transport::conditional_escape_threshold_quadrature(
+            grid, 0, static_cast<EscapeThresholdSide>(99), lower_escape);
+    }, "invalid threshold side");
+}
+
+void test_linear_measure_threshold() {
+    const PhaseSpaceGrid grid({0.0, 1.0}, {1.0, 2.0}, {-1.0, 1.0});
+    // y_escape(x)=7-5x in x=r^3, y=v^3. Its exact area below the curve is
+    // ((7+2)/2-1)/(8-1)=1/2; integrating uniformly in r would be wrong.
+    const transport::EscapeSpeedEvaluator escape = [](double r) {
+        return std::cbrt(7.0 - 5.0 * r * r * r);
+    };
+    const auto measure = transport::threshold_cell_measure(grid, 0, 0,
+                                                            escape);
+    require_close(measure.bound_fraction, 0.5,
+                  "linear escape curve exact x-y area", 2.0e-14);
+    require_close(measure.unbound_fraction, 0.5,
+                  "linear escape curve complementary area", 2.0e-14);
+    const auto bound = transport::conditional_escape_threshold_quadrature(
+        grid, 0, EscapeThresholdSide::bound, escape);
+    const auto unbound = transport::conditional_escape_threshold_quadrature(
+        grid, 0, EscapeThresholdSide::unbound, escape);
+    check_conditional_rule(grid, bound, EscapeThresholdSide::bound, escape);
+    check_conditional_rule(grid, unbound, EscapeThresholdSide::unbound, escape);
+}
+
+void test_refinement_subcell(const SolarBackground& background) {
+    // A smooth curved threshold has an analytic x=r^3 integral over the
+    // whole domain. Partitioning that same domain into more radial FV cells
+    // must converge to the same bound measure without global-state splitting.
+    const double exact = ((3.375 + 0.3 * (1.0 - 1.0 / 5.0)) - 1.0) / 7.0;
+    double previous_error = 1.0;
+    for (int radial_cells : {1, 2, 4}) {
+        std::vector<double> radial_faces;
+        for (int i = 0; i <= radial_cells; ++i) {
+            radial_faces.push_back(std::cbrt(
+                static_cast<double>(i) / radial_cells));
+        }
+        const PhaseSpaceGrid grid(radial_faces, {1.0, 2.0}, {-1.0, 1.0});
+        const transport::EscapeSpeedEvaluator curved = [](double r) {
+            return std::cbrt(3.375 + 0.3 *
+                             (1.0 - std::pow(r, 12)));
+        };
+        double fraction = 0.0;
+        double normalized_volume = 0.0;
+        for (int ir = 0; ir < radial_cells; ++ir) {
+            const double volume = grid.cell_phase_measure(ir, 0, 0);
+            fraction += volume * transport::threshold_cell_measure(
+                grid, static_cast<std::size_t>(ir), 0, curved).bound_fraction;
+            normalized_volume += volume;
+        }
+        fraction /= normalized_volume;
+        const double error = std::abs(fraction - exact);
+        require(error < 2.0e-9, "curved threshold bound measure is accurate");
+        require(error <= previous_error + 2.0e-13,
+                "radial FV refinement does not increase threshold error");
+        previous_error = error;
+    }
+
+    const double radius = background.solar_radius_cm();
+    const double inner = 0.3 * radius;
+    const double outer = 0.7 * radius;
+    const double escape_inner = background.escape_speed_cm_s(inner);
+    const double escape_outer = background.escape_speed_cm_s(outer);
+    const PhaseSpaceGrid solar_grid({inner, outer},
+                                    {0.5 * escape_outer, 1.2 * escape_inner},
+                                    {-1.0, 1.0});
+    const auto solar_measure = transport::threshold_cell_measure(
+        solar_grid, 0, 0, background);
+    require(solar_measure.classification ==
+                EscapeThresholdClass::threshold_crossing &&
+            solar_measure.bound_fraction > 0.0 &&
+            solar_measure.unbound_fraction > 0.0,
+            "monotone solar profile produces both conditional measures");
+    require(solar_measure.estimated_absolute_error < 1.0e-9,
+            "solar crossing fraction converges at declared tolerance");
+    const transport::EscapeSpeedEvaluator solar_escape =
+        [&background](double r) { return background.escape_speed_cm_s(r); };
+    check_conditional_rule(solar_grid,
+        transport::conditional_escape_threshold_quadrature(
+            solar_grid, 0, EscapeThresholdSide::bound, background),
+        EscapeThresholdSide::bound, solar_escape);
+    check_conditional_rule(solar_grid,
+        transport::conditional_escape_threshold_quadrature(
+            solar_grid, 0, EscapeThresholdSide::unbound, background),
+        EscapeThresholdSide::unbound, solar_escape);
+
+    // Independently sum the same physical solar rectangle on successively
+    // refined radial and speed grids. Both axes use uniform cube coordinates.
+    double first_solar_fraction = -1.0;
+    for (int cells : {1, 2, 4, 8}) {
+        std::vector<double> r_faces;
+        std::vector<double> v_faces;
+        const double r_cube_lo = std::pow(inner / outer, 3);
+        const double v_lo = 0.5 * escape_outer;
+        const double v_hi = 1.2 * escape_inner;
+        const double v_cube_lo = std::pow(v_lo / v_hi, 3);
+        for (int i = 0; i <= cells; ++i) {
+            const double fraction = static_cast<double>(i) / cells;
+            r_faces.push_back(outer * std::cbrt(
+                r_cube_lo + fraction * (1.0 - r_cube_lo)));
+            v_faces.push_back(v_hi * std::cbrt(
+                v_cube_lo + fraction * (1.0 - v_cube_lo)));
+        }
+        const PhaseSpaceGrid refined(r_faces, v_faces, {-1.0, 1.0});
+        double total_measure = 0.0;
+        double bound_measure = 0.0;
+        for (int ir = 0; ir < cells; ++ir) {
+            for (int iv = 0; iv < cells; ++iv) {
+                const std::size_t radial = static_cast<std::size_t>(ir);
+                const std::size_t speed = static_cast<std::size_t>(iv);
+                const double volume = refined.cell_phase_measure(radial,
+                                                                  speed, 0);
+                total_measure += volume;
+                bound_measure += volume *
+                    transport::threshold_cell_measure(refined, radial,
+                                                       speed, background)
+                        .bound_fraction;
+            }
+        }
+        const double refined_fraction = bound_measure / total_measure;
+        if (cells == 1) {
+            first_solar_fraction = refined_fraction;
+        } else {
+            require(std::abs(refined_fraction - first_solar_fraction) < 2.0e-9,
+                    "joint r/v refinement preserves solar bound measure");
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -256,6 +531,10 @@ int main(int argc, char** argv) {
         test_positive_quadrature();
         const SolarBackground background(argv[1], argv[2]);
         test_escape_threshold(background);
+        test_constant_escape_subcell();
+        test_near_face_subcell();
+        test_linear_measure_threshold();
+        test_refinement_subcell(background);
         std::cout << "phase-space cell geometry tests passed\n";
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

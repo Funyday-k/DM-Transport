@@ -6,6 +6,8 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
+#include <vector>
 
 namespace transport {
 
@@ -51,6 +53,52 @@ struct EscapeThresholdGeometry {
 EscapeThresholdGeometry classify_escape_threshold_cell(
     const PhaseSpaceGrid& grid, std::size_t ir, std::size_t iv,
     const physics::SolarBackground& background);
+
+// The FV measure is uniform in x=r^3, y=v^3 and mu. For a crossing cell,
+// bound_fraction is the area under y_escape(x), clipped to the cell's y
+// interval, divided by the full x-y rectangle area. Fractions describe a
+// cell-integrated occupation; a point collision output must be deposited by
+// its actual (r,v,mu) coordinates, never split by these fractions.
+struct EscapeThresholdMeasure {
+    EscapeThresholdClass classification;
+    double bound_fraction;
+    double unbound_fraction;
+    // Sum of conservative coarse/refined Gauss-rule differences, including
+    // root-bracket uncertainty. This is a convergence indicator, not a
+    // rigorous mathematical error bound for an arbitrary escape profile.
+    double estimated_absolute_error;
+};
+
+// The injected evaluator supports analytic test profiles. Its escape speed
+// must be finite, positive, continuous, and nonincreasing across the radial
+// cell; the adaptive convergence indicator assumes a smooth profile.
+using EscapeSpeedEvaluator = std::function<double(double)>;
+
+EscapeThresholdMeasure threshold_cell_measure(
+    const PhaseSpaceGrid& grid, std::size_t ir, std::size_t iv,
+    const EscapeSpeedEvaluator& escape_speed_cm_s);
+EscapeThresholdMeasure threshold_cell_measure(
+    const PhaseSpaceGrid& grid, std::size_t ir, std::size_t iv,
+    const physics::SolarBackground& background);
+
+enum class EscapeThresholdSide { bound, unbound };
+
+struct EscapeThresholdQuadrature {
+    EscapeThresholdMeasure measure;
+    // Positive weights are fractions of the FULL cell FV measure. Their sum
+    // equals the requested side's fraction, within floating-point rounding.
+    std::vector<CellQuadratureNode> nodes;
+};
+
+// On crossing cells, adaptive positive radial quadrature follows the escape
+// curve in x=r^3, with conditional two-point Gauss rules in y=v^3 and mu.
+// The original global cell index and its point-deposition rule are unchanged.
+EscapeThresholdQuadrature conditional_escape_threshold_quadrature(
+    const PhaseSpaceGrid& grid, std::size_t flat_index,
+    EscapeThresholdSide side, const EscapeSpeedEvaluator& escape_speed_cm_s);
+EscapeThresholdQuadrature conditional_escape_threshold_quadrature(
+    const PhaseSpaceGrid& grid, std::size_t flat_index,
+    EscapeThresholdSide side, const physics::SolarBackground& background);
 
 }  // namespace transport
 

@@ -2,7 +2,7 @@
 
 维护版本：2026-09-16。依据：[Proposal.md](Proposal.md)、DaMaSCUS-SUN-EVAP 只读固定提交及用户补充建议。具体源码定位见 [源码依据附录](Proposal.md#code-reference)；当前设计决策、局域核公式和后端契约见 [工程与性能设计附录](Proposal.md#performance-design)。
 
-已进入初步实施，T00–T03 已完成，G0 物理门按约定条件关闭；T04/P00 正在推进，其余任务为 `pending`。外部数值 parity 仍未评估，当前证据与限制集中于 §8；尚未实施的阶段验收数值仍是门槛。
+已进入初步实施，T00–T04 已完成，G0 物理门按约定条件关闭；T05/P00 正在推进，其余任务为 `pending`。外部数值 parity 仍未评估，当前证据与限制集中于 §8；尚未实施的阶段验收数值仍是门槛。
 
 任务体系为 T00–T20、P00–P09，科学阶段为 G0–G6。G4 仍指有限年龄，不能被 CPU/GPU 里程碑替换。Proposal 已同步修正源码事实，原稿存于只读 [v1 存档](archive/Proposal_2026-09-14_v1.md)。
 
@@ -232,7 +232,7 @@ flowchart LR
 
 ### T04–T09：构造守恒的算符
 
-- T04：索引往返、单元体积总和、单位往返和 C++/Python 读取一致。网格不在奇点直接取值；对靠近 `v_escape(r)` 的单元设计阈值切割/子格积分。正权 r/v/mu 求积与输出沉积规则写入 schema；初始投影泄漏、传播泄漏和真实逃逸分别诊断。
+- T04：索引往返、单元体积总和、单位往返和 C++/Python 读取一致。网格不在奇点直接取值；穿越 `v_escape(r)` 的单元在 `x=r³, y=v³` 上积分束缚/非束缚测度，条件正权节点积分相应子格。schema 固定 faces、展平顺序、单位、求积和阈值约定。全局 state 不拆分；已知点按所属 FV 单元沉积，不能按子格比例拆分。初始投影泄漏、传播泄漏及真实逃逸的物理诊断分别在 T10/T11、T07/T08 接入后验收。
 - T05：reference 等权采样构造 `Q_coll=diag(Gamma)(P-I)`，保留自跃迁；零速率行直接为零。每条样本用稳定的 master seed、模型/网格指纹、state ID、sample ID 派生随机流，避免 `std::hash` 与 MPI rank 决定结果。固定平台、样本集合和合并次序后，1/2/4 ranks 核计数及矩阵一致；counter 后端进一步区分 sampling stage、rejection attempt 和 draw/lane，不承诺跨设备最终浮点结果逐位相同。
 - T05：核构建聚合诊断记录 `cdf_roundoff_fallback_count`；T02 保留 legacy 最后一靶兜底算法和无状态接口，不为极低概率浮点残差引入全局可变计数器。
 - T05：SD 固定模型下验证 `Gamma proportional to sigma` 与 P 的统计不变性，才允许复用 reference-sigma 核；源 C 单独随截面重算。cache key 包括质量、相互作用及耦合、靶列表、太阳表、网格/速度域、物理版本和抽样规则，错配必须拒绝加载。
@@ -313,15 +313,16 @@ P04 以粗前向/伴随 pilot 决定下一批预算或有可计算密度的 prop
 | T01 | completed | Git/依赖/数据/构建指纹、旧 CTest 和四个固定种子小案例已记录；选择 1e-34 cm² 作为接口回归点。它是可复现 legacy reference，不是收敛的科学 benchmark |
 | T02 | completed | T02a–d 已形成项目内最小物理闭包：冻结 AGSS09 背景、63 靶直接率、源顺序靶选择、碰撞条件热靶速度、low-mass contact 各向同性角和非相对论两体出射速度。完整接口显式接收 `std::mt19937`，返回靶索引、靶速度与出射 DM 速度；不含轨迹、分箱、逃逸或 kernel 状态 |
 | T03 | completed | 固定提交 `2ed0bfb` 下的标准契约与新鲜项目内构建完成 44 个各 100 万事件的保留种子批次；热浴选定弱式、加热/冷却、完整链旋转、CM 角分布及既有单测均通过，`physics_validation=pass`、`g0_eligible=true`。近逃逸尾部只作诊断；无独立 artifact，`reference_parity=not_evaluated` |
-| T04 | in_progress | 网格与保守源投影已具备；新增 1 点和正权 `2×2×2` 单元求积，以及 `E=0` 单元的全束缚、全非束缚、阈值穿越分类。穿越单元的子格体积/沉积与跨语言 schema 尚待完成 |
+| T04 | completed | FV 网格和点源守恒投影、1 点与 `2×2×2` 正权求积、`E=0` 分类及穿越格 `r³/v³` 子格比例/条件正权节点已实现；非均匀格的 C++/Python 索引和相空间测度逐格核对，schema 明确点沉积不拆分。初始/传播泄漏的物理诊断留给使用该接口的 T10/T11 与 T07/T08 |
+| T05 | in_progress | 最小 reference collision row 已接入：逐节点同时累加 `w_q Γ_q P_q`，自事件抵消，对角由离格率与显式数值速度 overflow 最后构造；普通等权 MC 和逻辑样本 RNG 通过小样测试。完整核、缓存/截面复用、分布式一致性、统计与求积收敛仍待验收，不能宣称 T05/T06 完成 |
 | P00 | in_progress | 基线工具已输出分命令和分案例墙钟时间；峰值内存、核构建和求解等未测字段为 null |
 
 `mvp.json` 是当前可运行参数的唯一来源，文档保留设计理由和验收条件。未确定预算必须由登记的 owner task 在对应验收前补充定义，不以默认值或零代替；这些未来门不妨碍 T00 的契约冻结完成，也不表示对应物理门已经通过。
 
-当前验证证据（2026-09-16）：Release 与 ASan/UBSan 的 `fast` CTest 均为 13/13；完整 T03 报告（本地生成：`Output/Result/validation/validation_report.json`）使用 4 个预先冻结种子、162 项 Bonferroni 同时检验，所需物理组全部通过。最大热浴速度箱界 `0.001571<0.003`、能量界 `0.002625<0.01`、解析平均率相对界 `0.000753<0.005`、CM 角 CDF 界 `0.001126<0.003`。`v/v_esc={0.8,0.95,0.99,1.01}` 的单碰撞越阈概率依次为 `{0.284757,0.461691,0.525259,0.559505}`，尾部精度与种子/半样本稳定性标记均合格，但只作诊断。报告确认标准契约跟踪文件干净、采样器为项目内新鲜构建；它检验选定的局域观测量，不能证明完整分布平衡或 legacy 数值 parity。初始只读参考的构建版本从 `543660f-dirty` 刷新为 `b5678f5`；旧 21 项测试中 17 项首次通过，4 项 MPI 因沙箱套接字限制失败，获批重试后通过，未把两次执行合写成一次全通过。该次 T01 基线已经保存；此后不再修改或编译参考仓库。基线验证报告（本地生成：`Output/Result/baseline/20260915-initial/validation_report.json`）
+当前验证证据（2026-09-16）：本轮 Release `fast` CTest 为 15/15；T04 子格与 T05 参考行的 ASan/UBSan 专项测试均通过；完整 T03 报告（本地生成：`Output/Result/validation/validation_report.json`）使用 4 个预先冻结种子、162 项 Bonferroni 同时检验，所需物理组全部通过。最大热浴速度箱界 `0.001571<0.003`、能量界 `0.002625<0.01`、解析平均率相对界 `0.000753<0.005`、CM 角 CDF 界 `0.001126<0.003`。`v/v_esc={0.8,0.95,0.99,1.01}` 的单碰撞越阈概率依次为 `{0.284757,0.461691,0.525259,0.559505}`，尾部精度与种子/半样本稳定性标记均合格，但只作诊断。报告确认标准契约跟踪文件干净、采样器为项目内新鲜构建；它检验选定的局域观测量，不能证明完整分布平衡或 legacy 数值 parity。初始只读参考的构建版本从 `543660f-dirty` 刷新为 `b5678f5`；旧 21 项测试中 17 项首次通过，4 项 MPI 因沙箱套接字限制失败，获批重试后通过，未把两次执行合写成一次全通过。该次 T01 基线已经保存；此后不再修改或编译参考仓库。基线验证报告（本地生成：`Output/Result/baseline/20260915-initial/validation_report.json`）
 
 两个截面各运行 Capture/普通模式 16 次尝试：`1e-36 cm²` 均未捕获；`1e-34 cm²` 分别捕获 8/6 个，普通模式 6 个均完整蒸发，四案未报告数值失败或计算截断。实际耦合、质量/截面与二进制版本通过日志核验。此样本只支持初步运行回归，不证明概率、占据数或寿命收敛；G1 尚未完成。运行来源（本地生成：`Output/Result/baseline/20260915-initial/run_manifest.json`）、计时报告（本地生成：`Output/Result/baseline/20260915-initial/performance_report.json`）
 
-G0 依预先约定的条件关闭：T03 局域物理门已通过，独立 legacy artifact 缺失的 `reference_parity=not_evaluated` 限制保留；未来合规 parity 若失败，重开 G0 并复核依赖结果。当前关键路径转为 T04 穿越阈值单元的子格体积/沉积与跨语言 schema，完成后按 T05/T06 建立最简 reference collision kernel 与离散热浴验收；GPU 和 P02 优化不进入这一轮。
+G0 依预先约定的条件关闭：T03 局域物理门已通过，独立 legacy artifact 缺失的 `reference_parity=not_evaluated` 限制保留；未来合规 parity 若失败，重开 G0 并复核依赖结果。T04 接口门已关闭；当前关键路径是 T05 完整 collision kernel 与 T06 离散热浴验收，数值速度 overflow 要通过扩域收敛而非记成物理蒸发；GPU 和 P02 优化不进入这一轮。
 
 通过 G0 后，才把这些接口用于真实碰撞核。V1 的第一张科学验证图是带误差带的 **MC 与 transport 绝对径向密度**，随后是外部密度、`N/C` 与同口径驻留时间、以及完整的误差和成本报告。

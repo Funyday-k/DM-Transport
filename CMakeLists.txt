@@ -20,6 +20,20 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(transport_projector PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(transport_grid_schema Code/src/GridSchema.cpp)
+target_include_directories(transport_grid_schema PUBLIC Code/include)
+target_compile_features(transport_grid_schema PUBLIC cxx_std_14)
+target_link_libraries(transport_grid_schema PUBLIC transport_grid)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(transport_grid_schema PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_executable(t04_grid_schema_probe Code/tools/t04_grid_schema_probe.cpp)
+target_link_libraries(t04_grid_schema_probe PRIVATE transport_grid_schema)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(t04_grid_schema_probe PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_library(transport_reference_physics
   Code/src/physics/ScatteringPhysics.cpp
   Code/src/physics/SolarBackground.cpp)
@@ -37,6 +51,16 @@ target_link_libraries(transport_cell_geometry PUBLIC
   transport_grid transport_reference_physics)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(transport_cell_geometry PRIVATE
+    -Wall -Wextra -Wpedantic)
+endif()
+
+add_library(transport_collision_kernel Code/src/CollisionKernel.cpp)
+target_include_directories(transport_collision_kernel PUBLIC Code/include)
+target_compile_features(transport_collision_kernel PUBLIC cxx_std_14)
+target_link_libraries(transport_collision_kernel PUBLIC
+  transport_cell_geometry transport_reference_physics)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(transport_collision_kernel PRIVATE
     -Wall -Wextra -Wpedantic)
 endif()
 
@@ -74,6 +98,15 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
   set_tests_properties(phase_space_cell_geometry PROPERTIES TIMEOUT 10)
+
+  add_executable(test_collision_kernel Code/tests/test_collision_kernel.cpp)
+  target_link_libraries(test_collision_kernel PRIVATE
+    transport_collision_kernel)
+  add_test(NAME collision_kernel
+    COMMAND test_collision_kernel
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
+  set_tests_properties(collision_kernel PROPERTIES TIMEOUT 10)
 
   add_executable(test_scattering_physics
     Code/tests/test_scattering_physics.cpp)
@@ -145,10 +178,17 @@ if(BUILD_TESTING)
             $<TARGET_FILE:t03_validation_sampler>)
   set_tests_properties(t03_validation_contract PROPERTIES TIMEOUT 20)
 
+  add_test(NAME grid_schema
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_grid_schema.py
+            $<TARGET_FILE:t04_grid_schema_probe>)
+  set_tests_properties(grid_schema PROPERTIES TIMEOUT 10)
+
   set_tests_properties(
     phase_space_grid
     phase_space_projector
     phase_space_cell_geometry
+    collision_kernel
     scattering_physics
     solar_background
     scattering_rate
@@ -159,5 +199,6 @@ if(BUILD_TESTING)
     reference_physics_provenance
     t03_oracle_contract
     t03_validation_contract
+    grid_schema
     PROPERTIES LABELS fast)
 endif()

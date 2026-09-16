@@ -280,12 +280,14 @@ class OracleContractTests(unittest.TestCase):
             tiers["scientific_validation"]["included_in_default_ctest"])
         self.assertEqual(
             tiers["scientific_validation"]["runner_status"],
-            "not_implemented",
+            "implemented_scientific_acceptance_pending",
         )
         self.assertEqual(
             tiers["scientific_validation"]["report_generator_status"],
-            "not_implemented",
+            "implemented_scientific_acceptance_pending",
         )
+        self.assertEqual(tiers["scientific_validation"]["runner"],
+                         "Code/python/run_t03_validation.py")
         self.assertEqual(
             tiers["scientific_validation"]["intended_execution"],
             "manual_nightly_or_hpc",
@@ -301,6 +303,133 @@ class OracleContractTests(unittest.TestCase):
             ["reference_parity", "physics_validation"],
         )
         self.assertIn("no local background", self.contract["unavailable_reason"])
+
+    def test_scientific_protocol_is_frozen_and_independent(self) -> None:
+        protocol = self.contract["scientific_physics_validation"]
+        self.assertEqual(protocol["mode"], "full")
+        self.assertEqual(protocol["runner"],
+                         "Code/python/run_t03_validation.py")
+        self.assertEqual(protocol["sampler_executable"],
+                         "t03_validation_sampler")
+        self.assertEqual(protocol["report_path"],
+                         self.contract["execution_tiers"][
+                             "scientific_validation"]["report_path"])
+        common = protocol["common"]
+        self.assertEqual(len(common["seeds"]), 4)
+        self.assertEqual(len(set(common["seeds"])), 4)
+        self.assertTrue(set(common["seeds"]).isdisjoint(
+            common["pilot_seeds_excluded_from_full"]))
+        self.assertGreaterEqual(common["samples_per_seed"], 1000000)
+        self.assertEqual(common["confidence_level"], 0.95)
+        self.assertEqual(common["bonferroni_scalar_count"], 162)
+        self.assertIn("disjoint", common["holdout_policy"])
+        canonical = common["canonical_source_policy"]
+        self.assertTrue(canonical["required_for_g0"])
+        self.assertEqual(canonical["noncanonical_status"], "not_evaluated")
+        self.assertEqual(canonical["smoke_status"], "not_evaluated")
+        self.assertIn("Code/configs/validation/t03_oracle_contract.json",
+                      canonical["tracked_clean_paths"])
+        self.assertIn("Code/tools/t03_validation_sampler.cpp",
+                      canonical["tracked_clean_paths"])
+        self.assertIn("clean tracked", canonical["sampler_build_requirement"])
+        self.assertEqual(common["smoke_override_policy"]["mode"],
+                         "smoke")
+        self.assertEqual(common["smoke_override_policy"][
+            "physics_validation_status"], "not_evaluated")
+        self.assertFalse(common["smoke_override_policy"]["g0_eligible"])
+
+        thermal = protocol["thermal_equilibrium"]
+        self.assertEqual(thermal["radius_Rsun"], [0.3, 0.7])
+        self.assertEqual(thermal["tchi_over_t"], 1.0)
+        edges = thermal["speed_bin_edges_over_bath_dm_thermal_speed"]
+        self.assertEqual(len(edges), 7)
+        self.assertIsNone(edges[-1])
+        self.assertEqual(edges[0], 0.0)
+        self.assertEqual(edges[:-1], sorted(set(edges[:-1])))
+        def cdf(x: float) -> float:
+            return (math.erf(x) -
+                    2.0 * x * math.exp(-x*x) / math.sqrt(math.pi))
+        for edge, quantile in zip(edges[:-1],
+                                  [0.0, 0.2, 0.4, 0.6, 0.8, 0.95]):
+            self.assertAlmostEqual(cdf(edge), quantile, places=12)
+        self.assertIn("Gamma_total", thermal["estimator"])
+        self.assertGreater(thermal["acceptance"][
+            "speed_bin_max_absolute_mean_plus_bonferroni_se"], 0.0)
+        self.assertGreater(thermal["acceptance"][
+            "energy_max_absolute_mean_plus_bonferroni_se"], 0.0)
+        self.assertGreater(thermal["acceptance"][
+            "analytic_mb_rate_max_relative_difference_plus_bonferroni_se"],
+            0.0)
+
+        heating = protocol["heating_cooling"]
+        self.assertEqual(heating["tchi_over_t"], [0.5, 1.0, 2.0])
+        self.assertTrue(heating["reuse_equilibrium_at_tchi_over_t_one"])
+        self.assertGreater(heating["acceptance"][
+            "cold_minimum_lower_confidence_bound"], 0.0)
+        self.assertLess(heating["acceptance"][
+            "hot_maximum_upper_confidence_bound"], 0.0)
+
+        rotation = protocol["full_chain_rotation"]
+        self.assertEqual(rotation["radius_Rsun"], [0.3, 0.7])
+        self.assertEqual(len(rotation["incoming_directions_lab"]), 2)
+        for direction in rotation["incoming_directions_lab"]:
+            self.assertAlmostEqual(sum(x*x for x in direction), 1.0)
+        self.assertNotEqual(rotation["incoming_directions_lab"][0],
+                            rotation["incoming_directions_lab"][1])
+        rotated_seeds = {
+            seed + rotation["rotated_seed_offset"]
+            for seed in common["seeds"]
+        }
+        self.assertTrue(rotated_seeds.isdisjoint(common["seeds"]))
+        self.assertTrue(rotated_seeds.isdisjoint(
+            common["pilot_seeds_excluded_from_full"]))
+        self.assertEqual(set(rotation["vectors"]),
+                         {"target_velocity", "outgoing_dm_velocity"})
+        self.assertEqual(rotation[
+            "component_cdf_thresholds_over_bath_dm_thermal_speed"],
+            [-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0])
+        self.assertEqual(len(rotation["moments"]), 9)
+        self.assertEqual(rotation["moment_vector"], "outgoing_dm_velocity")
+        cm = protocol["cm_scattering_angle"]
+        self.assertEqual(cm["radius_Rsun"], rotation["radius_Rsun"])
+        self.assertEqual(cm["speed_over_escape"],
+                         rotation["speed_over_escape"])
+        self.assertTrue(cm["reuse_full_chain_rotation_base_batches"])
+        self.assertEqual(len(cm["cosine_histogram_edges"]), 11)
+        self.assertEqual(cm["cosine_histogram_edges"],
+                         [round(-1.0 + 0.2 * index, 1)
+                          for index in range(11)])
+        self.assertIn("incoming lab DM", cm["observable"])
+        self.assertGreater(cm["acceptance"][
+            "cdf_max_absolute_difference_plus_bonferroni_se"], 0.0)
+        self.assertEqual(
+            common["bonferroni_scalar_count"],
+            len(thermal["radius_Rsun"]) * (6 + 1 + 1) +
+            (len(heating["tchi_over_t"]) - 1) +
+            len(rotation["radius_Rsun"]) *
+            (len(rotation["vectors"]) * 3 * len(rotation[
+                "component_cdf_thresholds_over_bath_dm_thermal_speed"]) +
+             len(rotation["moments"])) +
+            len(cm["radius_Rsun"]) *
+            (len(cm["cosine_histogram_edges"]) - 2),
+        )
+        self.assertIn("inverse", rotation["comparison"])
+
+        tail = protocol["near_escape_tail"]
+        self.assertEqual(tail["speed_over_escape"],
+                         [0.8, 0.95, 0.99, 1.01])
+        self.assertEqual(tail["passive_velocity_ceiling_over_escape"],
+                         [1.5, 2.0, 3.0])
+        self.assertIn("never truncate", tail["ceiling_rule"])
+        self.assertEqual(tail["precision_status"]["role_in_physics_gate"],
+                         "diagnostic_only")
+        self.assertGreater(tail["precision_status"][
+            "heterogeneity_flag_z_threshold"], 0.0)
+        self.assertNotIn("near_escape_tail", protocol["physics_gate_checks"])
+        self.assertIn("existing_scattering_angle_distribution",
+                      protocol["physics_gate_checks"])
+        self.assertIn("cm_scattering_angle_distribution",
+                      protocol["physics_gate_checks"])
 
 
 if __name__ == "__main__":

@@ -322,16 +322,7 @@ $$
 
 ### 第二，ground-truth trajectory benchmark
 
-T01 已保存 DaMaSCUS 可运行截面区域的初始结果：
-
-$$
-10^{-38},
-10^{-36},
-10^{-34},
-\ldots
-$$
-
-这些固定输出用于首轮 transport parity。需要新增 trajectory 统计时，应在 DM-Transport 内移植必要的受控入口，或由用户另行提供新的只读基线产物。
+T01 已保存 `10^{-36}` 和 `10^{-34}\,\mathrm{cm^2}` 的固定种子小样本。这些输出用于初步运行回归，不能作为独立的单碰撞 golden 或已收敛的 transport benchmark。需要新增 trajectory 统计时，应在 DM-Transport 内移植必要的受控入口，或由用户另行提供新的只读基线产物。
 
 ### 第三，capture/source 算法依据
 
@@ -494,6 +485,15 @@ DM-Transport ScatteringPhysics ──► TransportOperator
 ```
 
 T03 只接受按 [oracle contract](../Code/configs/validation/t03_oracle_contract.json) 在 DM-Transport 外独立生成并冻结的 legacy artifact；当前物理实现不得参与期望值生成。用户规则禁止本项目构建或运行参考仓库，因此 artifact 缺失时报告仍保留 `reference_parity`，状态明确为 `not_evaluated`，不能用源码派生或解析检查冒充。`physics_validation` 是独立必过门，覆盖运动学、角分布、旋转对称性和热浴检查；具体 G0 条件由 Task_Plan 维护。
+
+T03 在固定半径关闭 streaming，直接检验完整局域碰撞链。若入射速度从温度为当地 `T` 的 Maxwell 分布抽样，单次碰撞的弱平衡残差为
+
+$$
+R_\varphi=\mathbb E_{\mathbf v\sim f_{\rm MB}(T)}\!\left[\frac{\Gamma_{\rm tot}(r,|\mathbf v|)}{\Gamma_{\rm ref}(r)}\left(\varphi(\mathbf v')-\varphi(\mathbf v)\right)\right]\simeq0,
+\quad \Gamma_{\rm ref}(r)=\Gamma_{\rm tot}(r,\sqrt{2k_BT/m_\chi}).
+$$
+
+测试函数限于预先固定的六个速度区间指标与无量纲能量 `E_chi/(k_B T)`；`Gamma` 权重不可省略，因为无条件 Maxwell 入射样本不是碰撞事件的入射分布。这些弱式检查是对选定观测量的验收，不能单独证明完整分布的平衡或详细平衡。配套检验低温 DM 加热、高温 DM 冷却、完整链在旋转后的分布相容，以及以入射实验室 DM 方向为轴的出射 CM 角余弦均匀性。另报告入射速度靠近当地逃逸速度时的 `P(|v'|>v_esc)`、分靶贡献和数值域外溢；它只是一次局域碰撞的尾部诊断，不是蒸发率。每项在运行前固定状态、种子、样本预算和验收区间，保存独立批次及失败信息；详细报告契约见 T03 配置。
 
 目标关系是：
 
@@ -2100,6 +2100,8 @@ N_{{\rm eq},\alpha}
 =\int_{\mathrm{cell}\ \alpha}Jf_{\rm MB}\,dr\,dv\,d\mu,
 \qquad Q_{\rm coll}^T\mathbf N_{\rm eq}\simeq0.
 $$
+
+这里的 `Q_coll` 是 T05 构造的有限体积离散生成元，属于 T06 验收；T03 先用 §8 的弱式检验尚未分箱的完整单碰撞过程。两项不能互相代替。
 
 不能把节点上的裸 \(f_{\rm MB}\) 代入本稿占据数方程。随速度/角度网格和核样本数提高，检查速度分布、角各向同性、能量矩及稳态残差收敛；速度域尾部不能静默截断。
 

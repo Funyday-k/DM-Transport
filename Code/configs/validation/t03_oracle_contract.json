@@ -201,6 +201,111 @@
       "scattering_angle_distribution"
     ]
   },
+  "scientific_physics_validation": {
+    "runner": "Code/python/run_t03_validation.py",
+    "sampler_executable": "t03_validation_sampler",
+    "mode": "full",
+    "report_path": "Output/Result/validation/validation_report.json",
+    "common": {
+      "seeds": [20260924, 20260925, 20260926, 20260927],
+      "pilot_seeds_excluded_from_full": [20260916, 20260917, 20260918, 20260920, 20261001, 20261002],
+      "samples_per_seed": 1000000,
+      "confidence_level": 0.95,
+      "bonferroni_family": "All scalar acceptance checks across selected thermal-equilibrium weak functions, heating-cooling, full-chain rotation and CM scattering-angle CDFs in one full report.",
+      "bonferroni_scalar_count": 162,
+      "bonferroni_z_rule": "Use Phi^{-1}(1-(1-confidence_level)/(2*bonferroni_scalar_count)) for every gated scalar, including one-sided heating bounds, without reselecting the family after observing data.",
+      "smoke_override_policy": {
+        "mode": "smoke",
+        "physics_validation_status": "not_evaluated",
+        "g0_eligible": false,
+        "trigger": "Any reduced sample count or state subset is diagnostic only."
+      },
+      "holdout_policy": "Pilot and full-run seeds must be disjoint. Freeze states, thresholds and acceptance rules before full independent-seed runs; do not tune against full-run outcomes.",
+      "canonical_source_policy": {
+        "required_for_g0": true,
+        "tracked_clean_paths": ["Code/configs/validation/t03_oracle_contract.json", "Code/tools/t03_validation_sampler.cpp", "Code/python/run_t03_validation.py"],
+        "required_state": "Each declared path is tracked and has no staged or unstaged differences from the recorded HEAD commit during the full run.",
+        "sampler_build_requirement": "Use the canonical project-local CMake target with clean tracked T03 build/physics sources and an executable newer than its compiled sources; custom or stale binaries are diagnostic only.",
+        "noncanonical_status": "not_evaluated",
+        "smoke_status": "not_evaluated"
+      }
+    },
+    "thermal_equilibrium": {
+      "radius_Rsun": [0.3, 0.7],
+      "tchi_over_t": 1.0,
+      "incoming_distribution": "Maxwell-Boltzmann DM velocities at the local bath temperature; streaming disabled.",
+      "test_functions": ["six_speed_bin_indicators", "energy_over_kBT_bath"],
+      "speed_bin_edges_over_bath_dm_thermal_speed": [0.0, 0.7089337109534111, 0.966738952196692, 1.2137063222011224, 1.5234217531739933, 1.9767053274642596, null],
+      "speed_bin_edge_rule": "Lower-inclusive bins; null final upper edge means positive infinity. Finite edges are Maxwell-speed CDF quantiles 0, 0.2, 0.4, 0.6, 0.8 and 0.95.",
+      "gamma_reference": "Gamma_total(r, sqrt(2*k_B*T_bath/m_chi)) evaluated once per radius",
+      "estimator": "Mean of Y=(Gamma_total(r,|v_in|)/Gamma_reference)*(phi(v_out)-phi(v_in)); retain per-event or sufficient second moments for standard error.",
+      "acceptance": {
+        "method": "simultaneous_equivalence_bound",
+        "speed_bin_max_absolute_mean_plus_bonferroni_se": 0.003,
+        "energy_max_absolute_mean_plus_bonferroni_se": 0.01,
+        "analytic_mb_rate_max_relative_difference_plus_bonferroni_se": 0.005
+      }
+    },
+    "heating_cooling": {
+      "radius_Rsun": 0.3,
+      "tchi_over_t": [0.5, 1.0, 2.0],
+      "reuse_equilibrium_at_tchi_over_t_one": true,
+      "observable": "Y=(Gamma_total(r,|v_in|)/Gamma_reference)*(E_out-E_in)/(k_B*T_bath)",
+      "acceptance": {
+        "method": "simultaneous_one_sided_sign_and_margin",
+        "cold_minimum_lower_confidence_bound": 0.01,
+        "hot_maximum_upper_confidence_bound": -0.01,
+        "equal_temperature_uses_thermal_equilibrium_energy_check": true
+      }
+    },
+    "full_chain_rotation": {
+      "radius_Rsun": [0.3, 0.7],
+      "speed_over_escape": 0.95,
+      "incoming_directions_lab": [[0.0, 0.0, 1.0], [0.2672612419124244, 0.5345224838248488, 0.8017837257372732]],
+      "rotated_seed_offset": 100000,
+      "comparison": "Apply inverse of the declared rotation to the rotated-run target and outgoing DM vectors; compare each Cartesian component CDF for both vectors and first and second moments for outgoing DM only. Do not require same-seed event equality.",
+      "vectors": ["target_velocity", "outgoing_dm_velocity"],
+      "component_cdf_thresholds_over_bath_dm_thermal_speed": [-2.0, -1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 2.0],
+      "moment_normalization": "local_escape_speed",
+      "moment_vector": "outgoing_dm_velocity",
+      "moments": ["x", "y", "z", "xx", "xy", "xz", "yy", "yz", "zz"],
+      "acceptance": {
+        "method": "independent_two_sample_simultaneous_equivalence",
+        "component_cdf_max_absolute_difference_plus_bonferroni_se": 0.01,
+        "component_mean_max_absolute_difference_plus_bonferroni_se": 0.02,
+        "second_moment_max_absolute_difference_plus_bonferroni_se": 0.03
+      }
+    },
+    "cm_scattering_angle": {
+      "radius_Rsun": [0.3, 0.7],
+      "speed_over_escape": 0.95,
+      "reuse_full_chain_rotation_base_batches": true,
+      "observable": "Cosine of the outgoing DM CM-frame direction against the incoming lab DM velocity axis, matching the legacy low-mass contact angle convention.",
+      "cosine_histogram_edges": [-1.0, -0.8, -0.6, -0.4, -0.2, 0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+      "reference_cdf": "F(x)=(x+1)/2 for isotropic low-mass contact scattering on [-1,1].",
+      "acceptance": {
+        "method": "one_sample_simultaneous_equivalence",
+        "cdf_max_absolute_difference_plus_bonferroni_se": 0.003
+      }
+    },
+    "near_escape_tail": {
+      "radius_Rsun": 0.3,
+      "speed_over_escape": [0.8, 0.95, 0.99, 1.01],
+      "observable": "P(|v_out|>v_escape(r)) after one local collision; this is not an evaporation rate.",
+      "passive_velocity_ceiling_over_escape": [1.5, 2.0, 3.0],
+      "ceiling_rule": "Record exceedance only; never truncate collision sampling or treat this diagnostic as the T06 tail-error budget.",
+      "required_diagnostics": ["pooled_and_per_seed_wilson_intervals", "target_selection_counts", "first_half_and_second_half_counts", "seed_and_half_split_four_sigma_flag", "sample_count", "zero_count_upper_bound", "velocity_ceiling_exceedance_counts"],
+      "precision_status": {
+        "minimum_crossing_count": 100,
+        "maximum_wilson_relative_halfwidth": 0.2,
+        "heterogeneity_flag_z_threshold": 4.0,
+        "insufficient_count_status": "insufficient_tail_precision",
+        "role_in_physics_gate": "diagnostic_only"
+      }
+    },
+    "physics_gate_checks": ["existing_elastic_kinematics", "existing_target_conditioning", "existing_scattering_angle_distribution", "thermal_equilibrium", "heating_cooling", "full_chain_rotation", "cm_scattering_angle_distribution"],
+    "near_escape_gate_role": "required_diagnostic_report_not_expected_value_test"
+  },
   "comparison_policy": {
     "deterministic_rate_relative_tolerance": 1e-10,
     "deterministic_rate_absolute_floor_s_inv": 1e-30,
@@ -238,9 +343,10 @@
       "may_complete_t03_physics_validation": false
     },
     "scientific_validation": {
-      "runner_status": "not_implemented",
+      "runner_status": "implemented_scientific_acceptance_pending",
+      "runner": "Code/python/run_t03_validation.py",
       "intended_execution": "manual_nightly_or_hpc",
-      "report_generator_status": "not_implemented",
+      "report_generator_status": "implemented_scientific_acceptance_pending",
       "included_in_default_ctest": false,
       "report_path": "Output/Result/validation/validation_report.json",
       "scope": [

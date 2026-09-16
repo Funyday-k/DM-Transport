@@ -14,7 +14,15 @@ cmake --build build --parallel 2
 ctest --test-dir build -L fast --output-on-failure
 ```
 
-太阳背景测试可单独运行 `ctest --test-dir build -R solar_background --output-on-failure`；输入来自仓库内的 [AGSS09 太阳表](Code/data/solar/model_agss09.dat) 与 [核数据表](Code/data/solar/Nuclear_Data.txt)，固定来源和许可证见 [physics provenance](Code/provenance/reference_physics.json)。`sd_rate_diagnostic` 输出各靶的截面、直接散射率、占比和总率。参数见 [MVP 配置](Code/configs/benchmark/mvp.json)。[基线工具](Code/python/run_baseline.py) 用于读取本项目内保存的 DaMaSCUS-SUN-EVAP 基线产物，使用 `--help` 查看参数。参考仓库严格只读，不在其中修改、编译或运行；所需实现须移植到本项目后再构建。`fast` 测试覆盖 unit、contract 和小型物理 smoke；多状态大样本、热浴平衡与可用时的外部 parity 由 [T03 契约](Code/configs/validation/t03_oracle_contract.json) 约束，scientific runner 与报告生成器尚未实现，不能由默认 CI 的通过代替。
+T03 局域碰撞的科学验证需手动运行大样本；默认读取冻结的状态、种子和验收阈值，并将报告写入 `Output/Result/validation/validation_report.json`：
+
+```sh
+python3 Code/python/run_t03_validation.py
+```
+
+`--smoke` 只检查采样器与报告链路，报告会标为 `physics_validation=not_evaluated`。G0 仅接受已提交且跟踪文件干净的标准契约、项目内新鲜构建采样器所生成的全量报告；自定义或过期构建只作诊断。没有独立 legacy artifact 时，`reference_parity` 保持 `not_evaluated`。
+
+太阳背景测试可单独运行 `ctest --test-dir build -R solar_background --output-on-failure`；输入来自仓库内的 [AGSS09 太阳表](Code/data/solar/model_agss09.dat) 与 [核数据表](Code/data/solar/Nuclear_Data.txt)，固定来源和许可证见 [physics provenance](Code/provenance/reference_physics.json)。`sd_rate_diagnostic` 输出各靶的截面、直接散射率、占比和总率。参数见 [MVP 配置](Code/configs/benchmark/mvp.json)。[基线工具](Code/python/run_baseline.py) 用于读取本项目内保存的 DaMaSCUS-SUN-EVAP 基线产物，使用 `--help` 查看参数。参考仓库严格只读，不在其中修改、编译或运行；所需实现须移植到本项目后再构建。`fast` 测试覆盖 unit、contract 和小型物理 smoke；全量科学运行与可用时的外部 parity 由 [T03 契约](Code/configs/validation/t03_oracle_contract.json) 约束，不能由默认 CI 的通过代替。
 
 ## 文档
 

@@ -33,6 +33,15 @@ endif()
 add_executable(sd_rate_diagnostic Code/tools/sd_rate_diagnostic.cpp)
 target_link_libraries(sd_rate_diagnostic PRIVATE transport_reference_physics)
 
+add_executable(t03_validation_sampler
+  Code/tools/t03_validation_sampler.cpp)
+target_link_libraries(t03_validation_sampler
+  PRIVATE transport_reference_physics)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(t03_validation_sampler PRIVATE
+    -Wall -Wextra -Wpedantic)
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(test_phase_space_grid Code/tests/test_phase_space_grid.cpp)
@@ -110,6 +119,12 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_t03_oracle_contract.py)
   set_tests_properties(t03_oracle_contract PROPERTIES TIMEOUT 10)
 
+  add_test(NAME t03_validation_contract
+    COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_t03_validation_runner.py
+            $<TARGET_FILE:t03_validation_sampler>)
+  set_tests_properties(t03_validation_contract PROPERTIES TIMEOUT 20)
+
   set_tests_properties(
     phase_space_grid
     phase_space_projector
@@ -122,5 +137,6 @@ if(BUILD_TESTING)
     baseline_contract
     reference_physics_provenance
     t03_oracle_contract
+    t03_validation_contract
     PROPERTIES LABELS fast)
 endif()

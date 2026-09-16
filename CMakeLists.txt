@@ -74,6 +74,16 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
   set_tests_properties(scattering_rate PROPERTIES TIMEOUT 10)
 
+  add_executable(test_target_sampling
+    Code/tests/test_target_sampling.cpp)
+  target_link_libraries(test_target_sampling
+    PRIVATE transport_reference_physics)
+  add_test(NAME target_sampling
+    COMMAND test_target_sampling
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
+  set_tests_properties(target_sampling PROPERTIES TIMEOUT 30)
+
   find_package(Python3 3.9 REQUIRED COMPONENTS Interpreter)
   add_test(NAME project_contract
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Code/tests/test_project_contract.py)

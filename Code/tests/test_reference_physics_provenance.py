@@ -43,6 +43,13 @@ SOURCES = {
     "patched_interpolation_evaluation": (
         "damascus_sun_evap", "cmake/PatchLibphysicaInterpolation.cmake",
         {"horner_interpolation_evaluation": (16, 24)}),
+    "trajectory_collision_sampling": (
+        "damascus_sun_evap", "src/Simulation_Trajectory.cpp", {
+            "target_velocity_rejection_limit": (51, 51),
+            "positive_uniform_and_direction_helpers": (146, 171),
+            "source_order_target_selection": (2460, 2496),
+            "collision_conditioned_target_velocity": (2498, 2564),
+        }),
     "nuclear_target_model": (
         "obscura", "src/Target_Nucleus.cpp", {
             "isotope_name_and_mass_model": (25, 40),
@@ -120,6 +127,14 @@ PORT_FRAGMENTS = {
         "reduced_mass",
         "particle_and_gravity_constants",
     },
+    "target_and_velocity_sampling": {
+        "target_velocity_rejection_limit",
+        "positive_uniform_and_direction_helpers",
+        "source_order_target_selection",
+        "collision_conditioned_target_velocity",
+        "mass_and_length_units",
+        "time_and_temperature_units",
+    },
 }
 DESTINATIONS = {
     "mean_relative_speed": {
@@ -136,6 +151,10 @@ DESTINATIONS = {
         "Code/include/transport/physics/ScatteringPhysics.hpp",
         "Code/src/physics/ScatteringPhysics.cpp",
     },
+    "target_and_velocity_sampling": {
+        "Code/include/transport/physics/ScatteringPhysics.hpp",
+        "Code/src/physics/ScatteringPhysics.cpp",
+    },
 }
 DIFFERENCE_CATEGORIES = {
     "mean_relative_speed": {"units", "scope", "validation"},
@@ -146,6 +165,9 @@ DIFFERENCE_CATEGORIES = {
     "direct_sd_proton_rate": {
         "units", "model_scope", "electron_scope", "calculation_path",
         "validation_and_domain",
+    },
+    "target_and_velocity_sampling": {
+        "units", "model_scope", "rng_interface", "validation_and_errors",
     },
 }
 PRESERVED_BEHAVIORS = {
@@ -161,6 +183,12 @@ PRESERVED_BEHAVIORS = {
         "all_solar_targets",
         "direct_rate_product",
         "source_order_accumulation",
+    },
+    "target_and_velocity_sampling": {
+        "source_order_cdf",
+        "collision_conditioned_maxwell",
+        "legacy_draw_rejection_order",
+        "positive_speed_support",
     },
 }
 EXCLUSIONS = {

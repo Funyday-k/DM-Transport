@@ -104,6 +104,16 @@ class OracleContractTests(unittest.TestCase):
         self.assertEqual(selection["radius_Rsun"], [0.1, 0.5, 0.9])
         self.assertEqual(selection["speed_over_c"], [0.0001, 0.001, 0.006])
         self.assertEqual(selection["engine"], "std::mt19937")
+        self.assertEqual(
+            selection["event_prefix"],
+            {
+                "seed": 20260915,
+                "samples_per_state": 64,
+                "fields": ["selected_target_index"],
+            },
+        )
+        self.assertIn("standard-library",
+                      selection["distribution_implementation"])
         self.assertGreaterEqual(
             selection["samples_per_seed_per_state"] *
             len(selection["seeds"]),
@@ -151,6 +161,38 @@ class OracleContractTests(unittest.TestCase):
             self.assertLess(histogram["minimum"], histogram["maximum"])
             self.assertGreater(histogram["bins"], 0)
             self.assertIsInstance(histogram["include_overflow"], bool)
+        t02c_subset = parity["conditioned_target_velocity_scope"]
+        self.assertEqual(
+            set(t02c_subset["state_fields"]),
+            {
+                "radius_Rsun",
+                "target_index",
+                "temperature_K",
+                "target_mass_GeV",
+                "target_thermal_speed_cm_s",
+                "incoming_velocity_cm_s_xyz",
+            },
+        )
+        self.assertEqual(
+            t02c_subset["event_prefix_fields"],
+            ["target_velocity_cm_s_xyz"],
+        )
+        self.assertEqual(
+            set(t02c_subset["aggregate_fields"]),
+            {
+                "sample_count",
+                "target_speed_histogram",
+                "relative_speed_histogram",
+                "target_angle_histogram",
+                "confidence_interval",
+            },
+        )
+        self.assertIn("without outgoing-collision fields",
+                      t02c_subset["completion_rule"])
+        self.assertTrue(set(t02c_subset["event_prefix_fields"]).issubset(
+            set(parity["event_prefix_fields"])))
+        self.assertTrue(set(t02c_subset["aggregate_fields"]).issubset(
+            set(parity["aggregate_fields"])))
 
         physics = self.contract["collision_physics_validation"]
         self.assertEqual(
@@ -180,6 +222,21 @@ class OracleContractTests(unittest.TestCase):
             value > 0.0
             for value in comparison["event_prefix_tolerances"].values()
         ))
+        prefix_policy = comparison["rng_prefix_environment_policy"]
+        self.assertEqual(
+            prefix_policy["uniform_mapping"],
+            "std::uniform_real_distribution<double>",
+        )
+        self.assertIn(
+            "matching_cpp_standard_library_implementation_and_version",
+            prefix_policy["exact_prefix_requires"],
+        )
+        self.assertIn(
+            "matching_compiler_and_math_build_options",
+            prefix_policy["exact_prefix_requires"],
+        )
+        self.assertIn("not_evaluated",
+                      prefix_policy["standard_library_mismatch"])
         self.assertIn("Bonferroni", comparison["histogram_interval"])
         self.assertEqual(
             self.contract["validation_report_sections"],

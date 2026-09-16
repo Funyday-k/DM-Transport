@@ -57,8 +57,14 @@
     "radius_Rsun": [0.1, 0.5, 0.9],
     "speed_over_c": [0.0001, 0.001, 0.006],
     "engine": "std::mt19937",
+    "event_prefix": {
+      "seed": 20260915,
+      "samples_per_state": 64,
+      "fields": ["selected_target_index"]
+    },
     "seeds": [20260916, 20260917, 20260918, 20260919],
     "samples_per_seed_per_state": 250000,
+    "distribution_implementation": "Record the producer compiler and C++ standard-library identity.",
     "required_fields": [
       "target_rate_s_inv",
       "target_probability",
@@ -139,6 +145,27 @@
         "bins": 80,
         "include_overflow": false
       }
+    },
+    "conditioned_target_velocity_scope": {
+      "state_fields": [
+        "radius_Rsun",
+        "target_index",
+        "temperature_K",
+        "target_mass_GeV",
+        "target_thermal_speed_cm_s",
+        "incoming_velocity_cm_s_xyz"
+      ],
+      "event_prefix_fields": [
+        "target_velocity_cm_s_xyz"
+      ],
+      "aggregate_fields": [
+        "sample_count",
+        "target_speed_histogram",
+        "relative_speed_histogram",
+        "target_angle_histogram",
+        "confidence_interval"
+      ],
+      "completion_rule": "T02c may be assessed without outgoing-collision fields; those belong to T02d."
     }
   },
   "collision_physics_validation": {
@@ -161,6 +188,15 @@
       "cosine_absolute": 1e-12,
       "energy_relative": 1e-12,
       "energy_absolute_eV": 1e-12
+    },
+    "rng_prefix_environment_policy": {
+      "uniform_mapping": "std::uniform_real_distribution<double>",
+      "exact_prefix_requires": [
+        "matching_rng_engine",
+        "matching_compiler_and_math_build_options",
+        "matching_cpp_standard_library_implementation_and_version"
+      ],
+      "standard_library_mismatch": "Treat event prefixes as diagnostic and report exact prefix parity as not_evaluated; use aggregate statistical comparisons for acceptance."
     },
     "confidence_level": 0.95,
     "mean_interval": "normal interval using 1.96 times the sample standard error",

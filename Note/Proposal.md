@@ -419,7 +419,16 @@ $$
 
 自旋为零的靶取 `sigma_A=0`，总率按固定靶顺序求和 `Gamma_total=sum_A Gamma_A`。直接接口返回全部 63 个分靶记录，包括零率靶，并同时返回总率；本阶段不引入 rate 插值或缓存。
 
-本版没有独立 `Sample_Momentum_Transfer()`。T02c/d 的主碰撞接口以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。稳定契约如下，`_nu` 表示与固定参考一致的自然单位：
+T02c 先按 `Gamma_A/Gamma_total` 从上述 63 靶中选择核素。选定靶后，恒截面模型的事件条件热速度不是未加权 Maxwell 分布，而是
+
+$$
+p(\mathbf u_A\mid A,\mathbf v_\chi,\mathrm{collision})
+=\frac{f_{\rm MB}(\mathbf u_A;T,m_A)
+\lvert\mathbf v_\chi-\mathbf u_A\rvert}
+{\langle v_{\rm rel}\rangle_A}.
+$$
+
+项目内实现保留固定参考的 Romano–Walsh 混合 proposal、拒绝步骤、方向基和 `std::mt19937` 随机调用顺序，同时只在 API 边界使用 cgs。稳定接口为：
 
 ```cpp
 struct SdProtonModel {
@@ -431,22 +440,20 @@ SdScatteringRates direct_sd_proton_scattering_rates(
     const SolarBackground&, const SdProtonModel&,
     double radius_cm, double dm_speed_cm_s);
 
-struct CollisionSample {
-    Vector3 velocity_out_nu;
-    Vector3 target_velocity_nu;
-    int target_index;
-    double cos_scattering_angle;
-};
+using CartesianVelocityCmS = std::array<double, 3>;
 
-class ScatteringPhysics {
-public:
-    CollisionSample sample_collision(
-        const SolarBackground&, const DMModel&, double radius_nu,
-        const Vector3& velocity_in_nu, LegacyRNG& rng);
-};
+std::size_t sample_sd_proton_target_index(
+    const SdScatteringRates&, std::mt19937& rng);
+
+CartesianVelocityCmS sample_collision_conditioned_target_velocity_cm_s(
+    double temperature_K, double target_mass_GeV,
+    const CartesianVelocityCmS& dm_velocity_cm_s,
+    std::mt19937& rng);
 ```
 
-靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。散射适配器内部可保留固定参考的自然单位，但与 cgs `SolarBackground` 及跨语言文件的转换边界必须显式；文件字段按 Task_Plan 使用 `r_cm`、`v_cm_s`、`rate_s_inv` 等单位名。
+固定 legacy sampler 要求 `|v_chi|>0`；项目测试以小正速度验证解析单侧极限，不把它冒充零速 reference parity。相同 seed 的逐事件复现仅承诺相同 executable 与标准库；跨工具链由 T03 检查统计相容。T02d 再组合靶选择、靶速度、散射角和出射速度，不在 T02c 提前引入 `CollisionSample`。
+
+本版没有独立 `Sample_Momentum_Transfer()`。T02d 的主碰撞接口将以真实三维速度向量为输入/输出，transport 的 `(v,mu)` 投影由其适配层负责。靶速度、能量交换、动量转移可作为可选诊断；如输出 q，应由实际碰撞前后动量差计算。文件字段按 Task_Plan 使用 `r_cm`、`v_cm_s`、`rate_s_inv` 等单位名。
 
 若保留 `cos_scattering_angle` 诊断，它必须标明是旧实现围绕入射实验室 DM 速度轴抽取的变量，不是一般运动靶标下的相对速度散射角。旧角采样和 rate 热平均并不自动适用于一般速度相关或各向异性相互作用。low-mass 分支是显式配置开关，不是由低质量自动启用。移植先保持旧抽样映射，任何物理修正单独建立回归基线。
 
@@ -3758,8 +3765,8 @@ ITMM 作为现有离线/在线与 P05 的参照，不再新增独立实施任务
 | 太阳背景 | [Solar_Model.hpp:62](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Solar_Model.hpp#L62) | Mass、Temperature、Local_Escape_Speed、核/电子数密度 | T02 在项目内移植最小只读表接口；不带入轨迹状态 |
 | 散射率 | [Solar_Model.cpp:386](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L386) | 逐靶 rate、总 rate、直接计算/插值路径 | T02 移植 SD 恒截面直接 rate 闭包；T03 验证数值与适用范围 |
 | rate 插值 | [Solar_Model.cpp:518](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Solar_Model.cpp#L518) | 在 MPI_COMM_WORLD 上建立规则 r/v 表，速度上限固定 0.75 自然单位 | T02 不移植 MPI 建表；T05 在项目内按实际速度域另建缓存 |
-| 靶选择 | [Simulation_Trajectory.cpp:2460](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2460) | 根据各靶 rate 抽样、预分配核 rate 缓存 | T02 移植到项目内 physics target，保留零/非法 rate 检查 |
-| 热靶速度 | [Simulation_Trajectory.cpp:2498](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2498) | 碰撞条件下的热靶速度采样 | T02 移植最小 sampler；T03 处理 v=0 支持范围与极限 |
+| 靶选择 | [Simulation_Trajectory.cpp:2460](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2460) | 根据各靶 rate 抽样、预分配核 rate 缓存 | T02c 已移植源顺序核靶 CDF 与显式 RNG；固定 MVP 无电子通道 |
+| 热靶速度 | [Simulation_Trajectory.cpp:2498](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2498) | 碰撞条件下的热靶速度采样 | T02c 已移植恒截面条件 sampler；零速保留为独立极限验证 |
 | 单碰撞 | [Simulation_Trajectory.cpp:2587](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2587) | 选择靶、抽靶速度、调用 obscura 角采样、修改速度 | T02 在项目内移植完整流程并显式接收 RNG；不改 legacy `Scatter` |
 | 引力传播 | [Simulation_Trajectory.hpp:392](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/include/Simulation_Trajectory.hpp#L392) | Free_Particle_Propagator 已有独立类 | 作为 T07 只读算法依据；在本项目独立实现和验证 |
 | 首次捕获即停 | [Simulation_Trajectory.cpp:2698](https://github.com/Funyday-k/DaMaSCUS-SUN-EVAP/blob/b5678f5b193aa567ca10715c2a6c764c9e72eec7/src/Simulation_Trajectory.cpp#L2698) | 散射后更新 capture state，capture mode 立即终止 | T10 在本项目移植判据并新增源输出 |

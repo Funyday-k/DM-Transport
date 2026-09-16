@@ -102,6 +102,33 @@
       ]
     },
     {
+      "id": "trajectory_collision_sampling",
+      "upstream_id": "damascus_sun_evap",
+      "path": "src/Simulation_Trajectory.cpp",
+      "fragments": [
+        {
+          "id": "target_velocity_rejection_limit",
+          "start_line": 51,
+          "end_line": 51
+        },
+        {
+          "id": "positive_uniform_and_direction_helpers",
+          "start_line": 146,
+          "end_line": 171
+        },
+        {
+          "id": "source_order_target_selection",
+          "start_line": 2460,
+          "end_line": 2496
+        },
+        {
+          "id": "collision_conditioned_target_velocity",
+          "start_line": 2498,
+          "end_line": 2564
+        }
+      ]
+    },
+    {
       "id": "nuclear_target_model",
       "upstream_id": "obscura",
       "path": "src/Target_Nucleus.cpp",
@@ -393,6 +420,65 @@
         {
           "id": "source_order_accumulation",
           "description": "The total rate is accumulated in the fixed solar-target source order from the complete per-target breakdown."
+        }
+      ]
+    },
+    {
+      "id": "target_and_velocity_sampling",
+      "derived_from": [
+        "target_velocity_rejection_limit",
+        "positive_uniform_and_direction_helpers",
+        "source_order_target_selection",
+        "collision_conditioned_target_velocity",
+        "mass_and_length_units",
+        "time_and_temperature_units"
+      ],
+      "destinations": [
+        {
+          "path": "Code/include/transport/physics/ScatteringPhysics.hpp"
+        },
+        {
+          "path": "Code/src/physics/ScatteringPhysics.cpp"
+        }
+      ],
+      "intentional_differences": [
+        {
+          "category": "units",
+          "description": "The project API accepts kelvin, GeV, and Cartesian cm/s arrays rather than natural-unit scalar and libphysica vector types.",
+          "behavior_change": false
+        },
+        {
+          "category": "model_scope",
+          "description": "Target selection consumes the complete 63-entry nuclear-rate breakdown of the fixed pure-nuclear SD-proton MVP; it has no electron branch and does not query a solar model during sampling.",
+          "behavior_change": false
+        },
+        {
+          "category": "rng_interface",
+          "description": "Both stateless project functions receive an explicit std::mt19937 reference instead of using Trajectory_Simulator-owned PRNG and state.",
+          "behavior_change": false
+        },
+        {
+          "category": "validation_and_errors",
+          "description": "Malformed rates and invalid or unrepresentable thermodynamic and velocity inputs raise explicit standard exceptions, with deterministic input validation completed before random draws where applicable.",
+          "behavior_change": true
+        }
+      ],
+      "preserved_behaviors": [
+        {
+          "id": "source_order_cdf",
+          "description": "Nuclear target selection consumes one uniform draw, traverses the fixed solar targets in source order using their normalized rates, and assigns roundoff residue to the final target."
+        },
+        {
+          "id": "collision_conditioned_maxwell",
+          "description": "The target-velocity law remains the Maxwell-Boltzmann bath weighted by the dark-matter-to-target relative speed for a constant cross section."
+        },
+        {
+          "id": "legacy_draw_rejection_order",
+          "description": "The Romano-Walsh sampler retains the x=y and mu=1 sentinel, acceptance-test and proposal draw order, positive unit draws for logarithms, and post-acceptance azimuth draw; it permits 10000 rejected proposals and throws before drawing a proposal after the 10001st failed acceptance test."
+        },
+        {
+          "id": "positive_speed_support",
+          "description": "The collision-conditioned sampler retains the reference domain of strictly positive incoming dark-matter speed; the zero-speed analytic limit is validated separately rather than sampled through this API."
         }
       ]
     }

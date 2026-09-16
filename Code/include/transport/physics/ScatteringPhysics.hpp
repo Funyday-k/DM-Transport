@@ -1,13 +1,17 @@
 #ifndef TRANSPORT_PHYSICS_SCATTERING_PHYSICS_HPP
 #define TRANSPORT_PHYSICS_SCATTERING_PHYSICS_HPP
 
+#include <array>
 #include <cstddef>
+#include <random>
 #include <vector>
 
 #include "transport/physics/SolarBackground.hpp"
 
 namespace transport {
 namespace physics {
+
+using CartesianVelocityCmS = std::array<double, 3>;
 
 // Port provenance: Code/provenance/reference_physics.json, unit mean_relative_speed.
 // Mean speed of a particle moving at dm_speed_cm_s relative to a
@@ -64,6 +68,25 @@ SdScatteringRates direct_sd_proton_scattering_rates(
     const SdProtonModel& model,
     double radius_cm,
     double dm_speed_cm_s);
+
+// Draw one nuclear target from the complete source-order rate breakdown.
+// The input must contain a finite, positive total equal to the source-order
+// sum of finite, nonnegative target rates.  The fixed MVP has no electron
+// target.  Sampling requests exactly one uniform variate from rng.
+std::size_t sample_sd_proton_target_index(
+    const SdScatteringRates& rates,
+    std::mt19937& rng);
+
+// Collision-conditioned thermal target velocity for a constant cross
+// section.  This samples f_MB(u) |v_chi-u| rather than the unconditioned
+// Maxwell-Boltzmann bath.  Temperature, mass, and all vector components use
+// kelvin, GeV, and cm/s.  The legacy sampler requires a nonzero incoming
+// velocity; its zero-speed analytic limit is validated separately.
+CartesianVelocityCmS sample_collision_conditioned_target_velocity_cm_s(
+    double temperature_K,
+    double target_mass_GeV,
+    const CartesianVelocityCmS& dm_velocity_cm_s,
+    std::mt19937& rng);
 
 }  // namespace physics
 }  // namespace transport

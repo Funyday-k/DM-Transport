@@ -30,6 +30,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(transport_cell_geometry Code/src/PhaseSpaceCellGeometry.cpp)
+target_include_directories(transport_cell_geometry PUBLIC Code/include)
+target_compile_features(transport_cell_geometry PUBLIC cxx_std_14)
+target_link_libraries(transport_cell_geometry PUBLIC
+  transport_grid transport_reference_physics)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(transport_cell_geometry PRIVATE
+    -Wall -Wextra -Wpedantic)
+endif()
+
 add_executable(sd_rate_diagnostic Code/tools/sd_rate_diagnostic.cpp)
 target_link_libraries(sd_rate_diagnostic PRIVATE transport_reference_physics)
 
@@ -54,6 +64,16 @@ if(BUILD_TESTING)
   target_link_libraries(test_phase_space_projector PRIVATE transport_projector)
   add_test(NAME phase_space_projector COMMAND test_phase_space_projector)
   set_tests_properties(phase_space_projector PROPERTIES TIMEOUT 10)
+
+  add_executable(test_phase_space_cell_geometry
+    Code/tests/test_phase_space_cell_geometry.cpp)
+  target_link_libraries(test_phase_space_cell_geometry
+    PRIVATE transport_cell_geometry)
+  add_test(NAME phase_space_cell_geometry
+    COMMAND test_phase_space_cell_geometry
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/model_agss09.dat
+            ${CMAKE_CURRENT_SOURCE_DIR}/Code/data/solar/Nuclear_Data.txt)
+  set_tests_properties(phase_space_cell_geometry PROPERTIES TIMEOUT 10)
 
   add_executable(test_scattering_physics
     Code/tests/test_scattering_physics.cpp)
@@ -128,6 +148,7 @@ if(BUILD_TESTING)
   set_tests_properties(
     phase_space_grid
     phase_space_projector
+    phase_space_cell_geometry
     scattering_physics
     solar_background
     scattering_rate
